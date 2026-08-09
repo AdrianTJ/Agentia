@@ -1,0 +1,988 @@
+<title>Agentia — Technical Proposal</title>
+<style>
+  :root {
+    --ink:        #191b1f;
+    --ink-2:      #43484f;
+    --ink-3:      #7b818b;
+    --paper:      #f7f6f3;
+    --paper-2:    #efeeea;
+    --card:       #fffefc;
+    --rule:       #1a1a1a1a;
+    --rule-2:     #1a1a1a0e;
+    --accent:     #2f6272;
+    --accent-2:   #2f627214;
+    --good:       #2f7350;
+    --good-bg:    #2f735014;
+    --bad:        #a8474a;
+    --bad-bg:     #a8474a12;
+    --warn:       #9c6516;
+    --warn-bg:    #9c651614;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --serif: "Iowan Old Style", Charter, "Palatino Linotype", Palatino, Georgia, serif;
+    --mono: "SF Mono", Menlo, "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink:      #e6e6e5;
+      --ink-2:    #a9adb5;
+      --ink-3:    #6f757f;
+      --paper:    #121418;
+      --paper-2:  #1a1d22;
+      --card:     #1c1f24;
+      --rule:     #ffffff18;
+      --rule-2:   #ffffff0d;
+      --accent:   #74b0c2;
+      --accent-2: #74b0c21c;
+      --good:     #63b58b;
+      --good-bg:  #63b58b18;
+      --bad:      #dd8c88;
+      --bad-bg:   #dd8c8814;
+      --warn:     #d8a256;
+      --warn-bg:  #d8a25618;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink:      #e6e6e5;
+    --ink-2:    #a9adb5;
+    --ink-3:    #6f757f;
+    --paper:    #121418;
+    --paper-2:  #1a1d22;
+    --card:     #1c1f24;
+    --rule:     #ffffff18;
+    --rule-2:   #ffffff0d;
+    --accent:   #74b0c2;
+    --accent-2: #74b0c21c;
+    --good:     #63b58b;
+    --good-bg:  #63b58b18;
+    --bad:      #dd8c88;
+    --bad-bg:   #dd8c8814;
+    --warn:     #d8a256;
+    --warn-bg:  #d8a25618;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--serif); font-size: 17px; line-height: 1.66;
+    -webkit-font-smoothing: antialiased;
+  }
+  .doc { max-width: 760px; margin: 0 auto; padding: 0 26px 110px; }
+  .wide { max-width: 940px; margin-left: auto; margin-right: auto; }
+
+  /* ---------- masthead ---------- */
+  .mast { padding: 72px 0 30px; border-bottom: 2px solid var(--ink); margin-bottom: 6px; }
+  .kicker {
+    font-family: var(--sans); font-size: 10.5px; font-weight: 700;
+    letter-spacing: .17em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;
+  }
+  .mast h1 {
+    margin: 0 0 14px; font-weight: 400; font-size: clamp(31px, 5vw, 46px);
+    line-height: 1.08; letter-spacing: -.018em; text-wrap: balance;
+  }
+  .standfirst { margin: 0; font-size: 18.5px; line-height: 1.6; color: var(--ink-2); max-width: 60ch; }
+  .colophon {
+    display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 22px;
+    font-family: var(--sans); font-size: 12px; color: var(--ink-3);
+  }
+  .colophon b { color: var(--ink-2); font-weight: 600; }
+
+  /* ---------- provenance legend ---------- */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
+    padding: 13px 16px; margin: 26px 0 0; border-radius: 8px;
+    background: var(--paper-2); border: 1px solid var(--rule);
+    font-family: var(--sans); font-size: 12.5px; color: var(--ink-2);
+  }
+  .tagv {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--sans); font-size: 9.5px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 4px; white-space: nowrap; vertical-align: 1px;
+  }
+  .tagv--v { background: var(--good-bg); color: var(--good); }
+  .tagv--j { background: var(--accent-2); color: var(--accent); }
+  .tagv--o { background: var(--warn-bg); color: var(--warn); }
+
+  /* ---------- sections ---------- */
+  section { padding-top: 58px; }
+  h2 {
+    margin: 0 0 4px; font-weight: 400; font-size: 27px; line-height: 1.2;
+    letter-spacing: -.014em; text-wrap: balance;
+    display: flex; align-items: baseline; gap: 13px;
+  }
+  h2 .no {
+    font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent);
+    flex: 0 0 auto; padding-top: 4px;
+  }
+  .dek {
+    margin: 0 0 22px 0; font-family: var(--sans); font-size: 13px; color: var(--ink-3);
+    padding-left: 33px; letter-spacing: .01em;
+  }
+  h3 {
+    margin: 30px 0 8px; font-family: var(--sans); font-size: 14.5px; font-weight: 680;
+    letter-spacing: -.005em;
+  }
+  p { margin: 0 0 1.05em; }
+  ul, ol { margin: 0 0 1.1em; padding-left: 1.3em; }
+  li { margin-bottom: .45em; }
+  li::marker { color: var(--ink-3); }
+  strong { font-weight: 700; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  code {
+    font-family: var(--mono); font-size: .81em; background: var(--paper-2);
+    padding: .13em .4em; border-radius: 4px; border: 1px solid var(--rule-2);
+  }
+  pre {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.62;
+    background: var(--card); border: 1px solid var(--rule); border-radius: 9px;
+    padding: 15px 17px; overflow-x: auto; margin: 1.2em 0;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+  .cm { color: var(--ink-3); font-style: italic; }
+  .kw { color: var(--accent); }
+
+  /* ---------- the call-out ---------- */
+  .verdict {
+    margin: 30px 0 0; padding: 24px 26px; border-radius: 11px;
+    background: var(--card); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+  }
+  .verdict h3 {
+    margin: 0 0 10px; font-family: var(--sans); font-size: 11px; font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+  }
+  .verdict p { margin: 0 0 .8em; font-size: 17.5px; }
+  .verdict p:last-child { margin-bottom: 0; }
+
+  /* ---------- figures ---------- */
+  figure { margin: 30px 0; }
+  figure svg { width: 100%; height: auto; display: block; color: var(--ink); }
+  figcaption {
+    margin-top: 12px; font-family: var(--sans); font-size: 12.5px;
+    color: var(--ink-3); line-height: 1.55; text-align: left;
+  }
+  figcaption b { color: var(--ink-2); font-weight: 600; }
+  .figframe {
+    padding: 26px 22px 20px; border-radius: 11px;
+    background: var(--card); border: 1px solid var(--rule);
+  }
+
+  /* ---------- tables ---------- */
+  .tscroll { overflow-x: auto; margin: 22px 0; }
+  table {
+    width: 100%; border-collapse: collapse; font-family: var(--sans);
+    font-size: 13.5px; min-width: 560px;
+  }
+  th {
+    text-align: left; font-weight: 700; font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3);
+    padding: 0 12px 8px; border-bottom: 1.5px solid var(--rule);
+  }
+  td { padding: 11px 12px; border-bottom: 1px solid var(--rule-2); vertical-align: top; line-height: 1.5; }
+  td:first-child, th:first-child { padding-left: 0; }
+  td strong { font-weight: 650; }
+  tr[data-pick="yes"] td { background: var(--accent-2); }
+  tr[data-pick="yes"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); padding-left: 11px; }
+  .verdictcell { font-weight: 650; white-space: nowrap; }
+  .v-yes { color: var(--accent); } .v-no { color: var(--ink-3); }
+
+  /* ---------- research findings ---------- */
+  .findings { display: flex; flex-direction: column; gap: 1px; background: var(--rule);
+              border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; margin: 24px 0; }
+  .finding { background: var(--card); padding: 16px 18px; display: flex; gap: 14px; align-items: flex-start; }
+  .finding .mark {
+    flex: 0 0 auto; width: 21px; height: 21px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 12px; font-weight: 700; margin-top: 2px;
+    font-family: var(--sans);
+  }
+  .m-ok  { background: var(--good-bg); color: var(--good); }
+  .m-no  { background: var(--bad-bg);  color: var(--bad); }
+  .m-hm  { background: var(--warn-bg); color: var(--warn); }
+  .finding .body { min-width: 0; }
+  .finding .t {
+    font-family: var(--sans); font-size: 13.5px; font-weight: 650; margin: 0 0 4px; line-height: 1.4;
+  }
+  .finding .d { font-family: var(--sans); font-size: 12.5px; color: var(--ink-2); margin: 0; line-height: 1.55; }
+  .finding .d em { color: var(--ink-3); font-style: normal; }
+
+  /* ---------- roadmap ---------- */
+  .phases { display: flex; flex-direction: column; gap: 14px; margin: 24px 0; }
+  .phase {
+    display: grid; grid-template-columns: 92px 1fr; gap: 18px;
+    padding: 17px 19px; border-radius: 10px;
+    background: var(--card); border: 1px solid var(--rule);
+  }
+  .phase .when {
+    font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--accent);
+    letter-spacing: .02em; line-height: 1.5; padding-top: 2px;
+  }
+  .phase .when small { display: block; color: var(--ink-3); font-weight: 400; letter-spacing: 0; }
+  .phase h4 { margin: 0 0 6px; font-family: var(--sans); font-size: 14px; font-weight: 680; }
+  .phase p { margin: 0; font-family: var(--sans); font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+  .phase ul { margin: 7px 0 0; padding-left: 1.15em; font-family: var(--sans); font-size: 13px; color: var(--ink-2); }
+  .phase li { margin-bottom: .25em; }
+  .gate { border-left: 3px solid var(--warn); }
+  .gate .when { color: var(--warn); }
+
+  /* ---------- risks ---------- */
+  .risks { display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr)); gap: 14px; margin: 24px 0; }
+  .risk { padding: 16px 18px; border-radius: 10px; background: var(--card); border: 1px solid var(--rule); }
+  .risk .sev {
+    font-family: var(--sans); font-size: 9.5px; font-weight: 700; letter-spacing: .11em;
+    text-transform: uppercase; padding: 2px 7px; border-radius: 4px; display: inline-block; margin-bottom: 9px;
+  }
+  .s-hi { background: var(--bad-bg); color: var(--bad); }
+  .s-md { background: var(--warn-bg); color: var(--warn); }
+  .s-lo { background: var(--good-bg); color: var(--good); }
+  .risk h4 { margin: 0 0 6px; font-family: var(--sans); font-size: 13.5px; font-weight: 650; line-height: 1.4; }
+  .risk p { margin: 0; font-family: var(--sans); font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .risk .mit { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule-2); }
+  .risk .mit b { color: var(--ink); font-weight: 650; }
+
+  /* ---------- source list ---------- */
+  .sources { font-family: var(--sans); font-size: 12.5px; color: var(--ink-2); margin: 20px 0 0; padding-left: 1.2em; }
+  .sources li { margin-bottom: .55em; line-height: 1.5; }
+  .sources code { font-size: 11.5px; }
+
+  .endnote {
+    margin-top: 66px; padding-top: 22px; border-top: 1px solid var(--rule);
+    font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); line-height: 1.6;
+  }
+  .endnote b { color: var(--ink-2); }
+
+  @media (max-width: 620px) {
+    body { font-size: 16px; }
+    .phase { grid-template-columns: 1fr; gap: 8px; }
+    h2 { font-size: 23px; }
+    .dek { padding-left: 0; }
+  }
+</style>
+
+<div class="doc">
+
+  <header class="mast">
+    <div class="kicker">Technical proposal · 09 August 2026</div>
+    <h1>A fast reader for Markdown and HTML artifacts</h1>
+    <p class="standfirst">
+      How to build it, what the research settled, what it refuted, and the one number that has to be
+      measured before a line of production code gets written.
+    </p>
+    <div class="colophon">
+      <span><b>Target</b> macOS 14+, Apple Silicon</span>
+      <span><b>Stack</b> Swift 6 · AppKit · WebKit</span>
+      <span><b>Repo</b> AdrianTJ/Agentia</span>
+    </div>
+  </header>
+
+  <div class="legend">
+    <span><span class="tagv tagv--v">Verified</span> survived adversarial fact-check</span>
+    <span><span class="tagv tagv--j">Judgment</span> my engineering call, not researched</span>
+    <span><span class="tagv tagv--o">Open</span> must be measured before committing</span>
+  </div>
+
+  <!-- ============ 1 ============ -->
+  <section>
+    <h2><span class="no">01</span>The recommendation</h2>
+    <p class="dek">One renderer, not two</p>
+
+    <div class="verdict">
+      <h3>Build it</h3>
+      <p>
+        Parse Markdown with <strong>cmark-gfm in Swift</strong>, emit HTML, and render everything —
+        Markdown and HTML alike — through a <strong>single WKWebView</strong> inside a plain AppKit
+        window. Ship unsandboxed under Developer ID. Read-only rendering with a source toggle for
+        v1; no Typora-style live preview.
+      </p>
+      <p>
+        The whole case rests on one observation: <strong>you need a web view anyway.</strong> Nothing
+        else on macOS renders arbitrary agent-written HTML. Once WebKit is on the critical path for
+        half your file types, adding a second native text renderer for the other half buys you
+        nothing and costs you two theme systems, two PDF paths, and two sets of bugs.
+      </p>
+    </div>
+
+    <figure class="wide">
+      <div class="figframe">
+        <svg viewBox="0 0 900 400" role="img" aria-label="Comparison of two architectures: the native-rendering path requires two separate renderers, two theme systems and two PDF export paths, while the single-web-view path shares one renderer, one theme system and one PDF path for both Markdown and HTML.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor"/>
+            </marker>
+            <marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#2f6272"/>
+            </marker>
+          </defs>
+
+          <!-- divider -->
+          <line x1="450" y1="18" x2="450" y2="382" stroke="currentColor" opacity=".16" stroke-dasharray="3 5"/>
+
+          <!-- ============ LEFT: native path ============ -->
+          <text x="24" y="30" font-family="system-ui" font-size="12" font-weight="700" fill="currentColor" opacity=".55" letter-spacing="1.4">OPTION A — NATIVE MARKDOWN RENDERER</text>
+
+          <!-- inputs -->
+          <rect x="24" y="52" width="112" height="36" rx="6" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="80" y="75" font-family="ui-monospace,monospace" font-size="12" fill="currentColor" text-anchor="middle">report.md</text>
+
+          <rect x="24" y="200" width="112" height="36" rx="6" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="80" y="223" font-family="ui-monospace,monospace" font-size="12" fill="currentColor" text-anchor="middle">chart.html</text>
+
+          <!-- renderer 1 -->
+          <rect x="184" y="42" width="132" height="56" rx="7" fill="currentColor" opacity=".07"/>
+          <rect x="184" y="42" width="132" height="56" rx="7" fill="none" stroke="currentColor" opacity=".45"/>
+          <text x="250" y="66" font-family="system-ui" font-size="12.5" font-weight="650" fill="currentColor" text-anchor="middle">TextKit 2 /</text>
+          <text x="250" y="83" font-family="system-ui" font-size="12.5" font-weight="650" fill="currentColor" text-anchor="middle">AttributedString</text>
+
+          <!-- renderer 2 -->
+          <rect x="184" y="190" width="132" height="56" rx="7" fill="currentColor" opacity=".07"/>
+          <rect x="184" y="190" width="132" height="56" rx="7" fill="none" stroke="currentColor" opacity=".45"/>
+          <text x="250" y="222" font-family="system-ui" font-size="12.5" font-weight="650" fill="currentColor" text-anchor="middle">WKWebView</text>
+
+          <line x1="136" y1="70" x2="178" y2="70" stroke="currentColor" opacity=".5" marker-end="url(#ar)"/>
+          <line x1="136" y1="218" x2="178" y2="218" stroke="currentColor" opacity=".5" marker-end="url(#ar)"/>
+
+          <!-- duplicated downstream -->
+          <rect x="344" y="42" width="86" height="26" rx="5" fill="none" stroke="currentColor" opacity=".4"/>
+          <text x="387" y="59" font-family="system-ui" font-size="11" fill="currentColor" text-anchor="middle">themes A</text>
+          <rect x="344" y="76" width="86" height="26" rx="5" fill="none" stroke="currentColor" opacity=".4"/>
+          <text x="387" y="93" font-family="system-ui" font-size="11" fill="currentColor" text-anchor="middle">PDF path A</text>
+
+          <rect x="344" y="190" width="86" height="26" rx="5" fill="none" stroke="currentColor" opacity=".4"/>
+          <text x="387" y="207" font-family="system-ui" font-size="11" fill="currentColor" text-anchor="middle">themes B</text>
+          <rect x="344" y="224" width="86" height="26" rx="5" fill="none" stroke="currentColor" opacity=".4"/>
+          <text x="387" y="241" font-family="system-ui" font-size="11" fill="currentColor" text-anchor="middle">PDF path B</text>
+
+          <line x1="316" y1="70" x2="338" y2="70" stroke="currentColor" opacity=".45" marker-end="url(#ar)"/>
+          <line x1="316" y1="218" x2="338" y2="218" stroke="currentColor" opacity=".45" marker-end="url(#ar)"/>
+
+          <!-- cost annotation -->
+          <text x="24" y="300" font-family="system-ui" font-size="12" fill="currentColor" opacity=".62">Everything downstream is built twice.</text>
+          <text x="24" y="320" font-family="system-ui" font-size="12" fill="currentColor" opacity=".62">A theme fix has to land in both.</text>
+          <text x="24" y="352" font-family="system-ui" font-size="12" font-weight="650" fill="currentColor" opacity=".8">2 renderers · 2 theme systems · 2 PDF paths</text>
+
+          <!-- ============ RIGHT: single webview ============ -->
+          <text x="478" y="30" font-family="system-ui" font-size="12" font-weight="700" fill="#2f6272" letter-spacing="1.4">OPTION B — ONE WEB VIEW  ◂ RECOMMENDED</text>
+
+          <rect x="478" y="52" width="104" height="36" rx="6" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="530" y="75" font-family="ui-monospace,monospace" font-size="12" fill="currentColor" text-anchor="middle">report.md</text>
+
+          <rect x="478" y="200" width="104" height="36" rx="6" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="530" y="223" font-family="ui-monospace,monospace" font-size="12" fill="currentColor" text-anchor="middle">chart.html</text>
+
+          <!-- cmark -->
+          <rect x="616" y="52" width="112" height="36" rx="6" fill="#2f6272" opacity=".12"/>
+          <rect x="616" y="52" width="112" height="36" rx="6" fill="none" stroke="#2f6272" stroke-width="1.4"/>
+          <text x="672" y="70" font-family="system-ui" font-size="12" font-weight="650" fill="#2f6272" text-anchor="middle">cmark-gfm</text>
+          <text x="672" y="83" font-family="system-ui" font-size="10" fill="#2f6272" text-anchor="middle" opacity=".85">&lt;1 ms, in Swift</text>
+
+          <line x1="582" y1="70" x2="610" y2="70" stroke="#2f6272" marker-end="url(#arA)"/>
+          <text x="596" y="62" font-family="system-ui" font-size="9.5" fill="#2f6272" text-anchor="middle">parse</text>
+
+          <!-- single renderer -->
+          <rect x="616" y="132" width="112" height="52" rx="7" fill="#2f6272" opacity=".12"/>
+          <rect x="616" y="132" width="112" height="52" rx="7" fill="none" stroke="#2f6272" stroke-width="1.4"/>
+          <text x="672" y="153" font-family="system-ui" font-size="12.5" font-weight="700" fill="#2f6272" text-anchor="middle">WKWebView</text>
+          <text x="672" y="170" font-family="system-ui" font-size="10" fill="#2f6272" text-anchor="middle" opacity=".85">network off</text>
+
+          <line x1="672" y1="88" x2="672" y2="126" stroke="#2f6272" marker-end="url(#arA)"/>
+          <text x="682" y="112" font-family="system-ui" font-size="9.5" fill="#2f6272">HTML</text>
+
+          <path d="M 582 218 L 600 218 Q 610 218 610 208 L 610 168 Q 610 158 620 158" fill="none" stroke="#2f6272" marker-end="url(#arA)"/>
+          <text x="556" y="248" font-family="system-ui" font-size="9.5" fill="#2f6272">as-is</text>
+
+          <!-- shared downstream -->
+          <rect x="786" y="118" width="90" height="26" rx="5" fill="none" stroke="#2f6272" opacity=".75"/>
+          <text x="831" y="135" font-family="system-ui" font-size="11" fill="#2f6272" text-anchor="middle">themes</text>
+          <rect x="786" y="152" width="90" height="26" rx="5" fill="none" stroke="#2f6272" opacity=".75"/>
+          <text x="831" y="169" font-family="system-ui" font-size="11" fill="#2f6272" text-anchor="middle">PDF export</text>
+          <line x1="728" y1="158" x2="780" y2="158" stroke="#2f6272" opacity=".75" marker-end="url(#arA)"/>
+
+          <text x="478" y="300" font-family="system-ui" font-size="12" fill="currentColor" opacity=".62">One stylesheet drives screen and print.</text>
+          <text x="478" y="320" font-family="system-ui" font-size="12" fill="currentColor" opacity=".62">A theme is a folder, not a code change.</text>
+          <text x="478" y="352" font-family="system-ui" font-size="12" font-weight="650" fill="#2f6272">1 renderer · 1 theme system · 1 PDF path</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>The comparison is about what gets duplicated, not about speed.</b> Both options need a
+        WKWebView for HTML. Option A adds a native Markdown renderer beside it, and every downstream
+        capability — reading themes, PDF export, find-in-page, print CSS — then has to exist twice.
+        Option B routes both file types into the renderer you were already forced to ship.
+      </figcaption>
+    </figure>
+
+    <p>
+      One refinement matters, and it is where this design departs from the libraries in the wild:
+      <strong>parse in Swift, not in the page.</strong> The popular WKWebView-based Markdown views
+      ship <code>markdown-it</code> inside the HTML and hand it raw text. That puts a JavaScript
+      engine on the first-paint path and forces JavaScript to stay switched on. Running cmark-gfm in
+      the Swift process means the web view receives finished HTML and, for Markdown documents, can
+      render with scripting locked down to a single pinned hash.
+    </p>
+  </section>
+
+  <!-- ============ 2 ============ -->
+  <section>
+    <h2><span class="no">02</span>What the research settled</h2>
+    <p class="dek">105 agents · 23 sources · 25 claims adversarially verified · 11 killed</p>
+
+    <p>
+      The useful part of this research was not what it confirmed — it was what it destroyed. Several
+      claims I would otherwise have built on failed a three-vote refutation pass.
+    </p>
+
+    <div class="findings">
+      <div class="finding">
+        <span class="mark m-ok">✓</span>
+        <div class="body">
+          <p class="t">Every shipping macOS Markdown previewer uses a C parser feeding a web view</p>
+          <p class="d">Confirmed by reading source, not READMEs. MacDown calls <code>hoedown_document_render</code> into a legacy <code>WebView</code>; QLMarkdown pipes cmark-gfm output into <code>webView.loadHTMLString</code> in both the app and its Quick Look extension. <em>No native-text-layout preview path exists in any of them.</em></p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-ok">✓</span>
+        <div class="body">
+          <p class="t">Markdown parsing is not a bottleneck and should not shape the architecture</p>
+          <p class="d">cmark runs at 20–26 ms per megabyte — independently replicated in 2026, not just quoted. A 10 KB artifact parses in 0.17 ms; 50 KB in 0.84 ms. <em>Any latency you feel is launch and layout, never the parser.</em></p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-ok">✓</span>
+        <div class="body">
+          <p class="t">The native-SwiftUI route has no stable landing place right now</p>
+          <p class="d">MarkdownUI is in maintenance mode; its maintainer points new work at Textual, which is 0.5.0, macOS 15+, lays out every block eagerly with zero lazy containers, and reaches into SwiftUI privates by <code>Mirror</code> reflection with a separate macOS 26 branch. <em>Fine for a hobby target, wrong for a default file handler.</em></p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-ok">✓</span>
+        <div class="body">
+          <p class="t">TextKit 2 still had open scroll and viewport defects being worked around in 2026</p>
+          <p class="d">STTextView exists because "neither NSTextView nor TextKit 2 classes are fully functional," and its changelog shows viewport and document-height fixes landing through April 2026. <em>Most of the radars are editing-path bugs a read-only viewer never touches — but the scroll and height class does apply.</em></p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-ok">✓</span>
+        <div class="body">
+          <p class="t">WKWebView PDF export is a supported API — the old "printing is broken" folklore is dead</p>
+          <p class="d"><code>createPDF(configuration:)</code> and <code>printOperation(with:)</code> both went public in macOS 11. The widely cited repo demonstrating blank output was last tested on macOS 10.15 and has no commits since April 2020.</p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-ok">✓</span>
+        <div class="body">
+          <p class="t">The iA Writer typefaces can be bundled and shipped legally</p>
+          <p class="d">Mono, Duo and Quattro are OFL 1.1 with dual reserved names ("iA Writer" and "Plex"). Bundling inside a commercial app is expressly permitted. Obligations: ship the license text, don't sell the fonts alone, don't reuse the reserved names on a face you modified. <em>Subsetting for PDF embedding counts as document embedding and does not trigger renaming.</em></p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-no">✕</span>
+        <div class="body">
+          <p class="t">Killed — "pre-warming a WKWebView cuts first load ~45%"</p>
+          <p class="d">The benchmark everyone cites is an iPhone XR on iOS 12.2 from 2019, measuring per-load deltas <em>inside an already-running app</em>. That is neither the right platform nor the right measurement for macOS process cold start. Don't plan around it.</p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-no">✕</span>
+        <div class="body">
+          <p class="t">Killed — "JavaScript Markdown renderers are ~7× slower than cmark"</p>
+          <p class="d">The cited table measures library throughput on an 11 MB corpus, not the cost this architecture actually pays. It does not justify anything at artifact scale. <em>The real reason to parse in Swift is security and JS-off rendering, not speed.</em></p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-no">✕</span>
+        <div class="body">
+          <p class="t">Killed — "TextKit 2 is performance-neutral and production-ready as of macOS 14"</p>
+          <p class="d">Both the "now as fast as TextKit 1" and the "ready by macOS 14" claims failed verification 0–3. Neither is safe to build on.</p>
+        </div>
+      </div>
+      <div class="finding">
+        <span class="mark m-hm">?</span>
+        <div class="body">
+          <p class="t">Unresolved — nothing establishes WKWebView cold-start cost on modern macOS</p>
+          <p class="d">Every performance source examined was the wrong platform, the wrong measurement, or an unquantified author assertion. <em>The single most important number for this project does not exist in public. It has to be measured — see §04.</em></p>
+        </div>
+      </div>
+    </div>
+
+    <p>
+      Worth flagging what the research <em>could not</em> reach: the fan-out returned nothing
+      verifiable on UTI registration, file watching, send-to-app mechanics, competitor pricing,
+      notarization, or editing models. Those sections below are marked
+      <span class="tagv tagv--j">Judgment</span> and rest on my own experience, not on cited sources.
+    </p>
+  </section>
+
+  <!-- ============ 3 ============ -->
+  <section>
+    <h2><span class="no">03</span>Rendering options, scored</h2>
+    <p class="dek">Against the actual constraints: renders HTML too, exports PDF, ships this year</p>
+
+    <div class="tscroll">
+      <table>
+        <thead>
+          <tr><th>Approach</th><th>Renders HTML?</th><th>PDF export</th><th>Maturity</th><th>Verdict</th></tr>
+        </thead>
+        <tbody>
+          <tr data-pick="yes">
+            <td><strong>cmark-gfm → HTML → WKWebView</strong><br><span style="color:var(--ink-3);">Parse in Swift, render in WebKit</span></td>
+            <td>Same path, no extra work</td>
+            <td>Free via <code>printOperation</code> + print CSS</td>
+            <td>What every shipping app does</td>
+            <td class="verdictcell v-yes">Build this</td>
+          </tr>
+          <tr>
+            <td><strong>WKWebView + markdown-it in-page</strong><br><span style="color:var(--ink-3);">MarkdownWebView's model</span></td>
+            <td>Yes</td>
+            <td>Same as above</td>
+            <td>Proven, but forces JS on</td>
+            <td class="verdictcell v-no">Rejected — can't lock down scripting; reference impl also pulls CDN assets</td>
+          </tr>
+          <tr>
+            <td><strong>Textual / MarkdownUI</strong><br><span style="color:var(--ink-3);">SwiftUI Text pipeline</span></td>
+            <td>No — needs a second renderer</td>
+            <td>Hand-rolled pagination</td>
+            <td>0.5.0, macOS 15+, eager layout</td>
+            <td class="verdictcell v-no">Rejected — pre-1.0 dependency on the critical path</td>
+          </tr>
+          <tr>
+            <td><strong>TextKit 2 + NSTextView</strong><br><span style="color:var(--ink-3);">via STTextView</span></td>
+            <td>No — needs a second renderer</td>
+            <td>Hand-rolled pagination</td>
+            <td>Open viewport bugs into 2026</td>
+            <td class="verdictcell v-no">Rejected — and STTextView is GPL-3 or paid</td>
+          </tr>
+          <tr>
+            <td><strong>swift-markdown + custom CoreText</strong><br><span style="color:var(--ink-3);">Full manual layout</span></td>
+            <td>No</td>
+            <td>Full manual pagination</td>
+            <td>Months of work</td>
+            <td class="verdictcell v-no">Rejected — the whole app, twice</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 4 ============ -->
+  <section>
+    <h2><span class="no">04</span>The launch budget</h2>
+    <p class="dek">The one thing to measure before committing <span class="tagv tagv--o" style="margin-left:6px;">Open</span></p>
+
+    <p>
+      "Lightning fast" is the requirement that decides whether this app is worth building, and it is
+      the one the research explicitly could not answer. So the project starts with a throwaway spike
+      whose only job is to produce a number.
+    </p>
+
+    <h3>The spike</h3>
+    <pre><code><span class="cm">// 150 lines, no app structure, one job: get a real number</span>
+<span class="kw">func</span> applicationWillFinishLaunching(_ n: Notification) {
+  signpost(<span style="color:var(--good);">"launch.begin"</span>)
+  webView = WKWebView(frame: .zero, configuration: hardened())  <span class="cm">// spawn WebContent early</span>
+  window.contentView = webView
+  window.makeKeyAndOrderFront(nil)
+}
+
+<span class="kw">func</span> application(_ app: NSApplication, open urls: [URL]) {
+  <span class="kw">let</span> html = Renderer.render(contentsOf: urls[0])   <span class="cm">// cmark-gfm, sub-ms</span>
+  webView.loadHTMLString(html, baseURL: schemeBase)
+}
+
+<span class="kw">func</span> webView(_ w: WKWebView, didFinish _: WKNavigation!) {
+  signpost(<span style="color:var(--good);">"launch.firstPaint"</span>)                 <span class="cm">// ← the number</span>
+}</code></pre>
+
+    <p>
+      Measure it from an actual Finder double-click, cold (after a reboot) and warm, on a 20 KB
+      artifact. Three outcomes, three responses:
+    </p>
+
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Cold-launch result</th><th>Reading</th><th>Response</th></tr></thead>
+        <tbody>
+          <tr><td><strong>under ~250 ms</strong></td><td>Comfortably viable as a default handler</td><td>Proceed as proposed</td></tr>
+          <tr><td><strong>250–450 ms</strong></td><td>Acceptable; warm launches will feel instant</td><td>Proceed, then trim frameworks and defer non-essential init</td></tr>
+          <tr><td><strong>over ~450 ms</strong></td><td>Too slow to displace Quick Look</td><td>Ship a Quick Look extension for the instant peek and let the app be the deliberate open</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      That third branch is a genuinely good outcome rather than a failure, and it is worth building
+      regardless. A Quick Look Preview Extension lives inside an already-resident host process, so
+      spacebar-in-Finder is near-instant no matter what the app's cold start turns out to be. Both
+      surfaces share one rendering framework, so it is a target in the build, not a second codebase.
+    </p>
+
+    <h3>Launch-path rules the design commits to now</h3>
+    <ul>
+      <li><strong>AppKit lifecycle, not the SwiftUI <code>App</code> struct.</strong> Direct control over when the window and web view come up, and no scene machinery on the critical path.</li>
+      <li><strong>SwiftUI only behind lazy instantiation.</strong> The sidebar is hidden by default — so its <code>NSHostingView</code> is created the first time it is shown and never during launch.</li>
+      <li><strong>The HTML shell is a compiled-in string,</strong> not a bundle resource read from disk.</li>
+      <li><strong>Create the web view in <code>applicationWillFinishLaunching</code></strong> so WebContent process spawn overlaps file read and parse instead of following them.</li>
+      <li><strong>Keep the link list short.</strong> AppKit and WebKit; nothing else loaded before first paint.</li>
+    </ul>
+  </section>
+
+  <!-- ============ 5 ============ -->
+  <section>
+    <h2><span class="no">05</span>Rendering untrusted HTML</h2>
+    <p class="dek">Agent-written artifacts are code you did not review <span class="tagv tagv--j" style="margin-left:6px;">Judgment</span></p>
+
+    <p>
+      This is the part nobody else does, and it is the reason to prefer this app over just opening
+      the file in Safari. An HTML artifact from an agent can contain arbitrary script, phone home,
+      or fingerprint the machine. The app renders it with the network cut at the WebKit layer and
+      tells you what it stopped.
+    </p>
+
+    <figure class="wide">
+      <div class="figframe">
+        <svg viewBox="0 0 880 300" role="img" aria-label="Two rendering profiles. Markdown documents render with scripting pinned to a single hash, no network, and assets served only from the document's own folder. HTML artifacts run their own scripts but every remote request is blocked by a content rule list before leaving the machine, with a per-document override.">
+          <defs>
+            <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor"/>
+            </marker>
+            <marker id="arR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#a8474a"/>
+            </marker>
+          </defs>
+
+          <!-- profile 1 -->
+          <text x="20" y="26" font-family="system-ui" font-size="11.5" font-weight="700" fill="currentColor" opacity=".55" letter-spacing="1.3">PROFILE 1 — MARKDOWN</text>
+          <rect x="20" y="42" width="96" height="34" rx="6" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="68" y="63" font-family="ui-monospace,monospace" font-size="11.5" fill="currentColor" text-anchor="middle">*.md</text>
+
+          <rect x="156" y="42" width="120" height="34" rx="6" fill="currentColor" opacity=".07"/>
+          <rect x="156" y="42" width="120" height="34" rx="6" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="216" y="63" font-family="system-ui" font-size="11.5" font-weight="600" fill="currentColor" text-anchor="middle">cmark-gfm</text>
+          <line x1="116" y1="59" x2="150" y2="59" stroke="currentColor" opacity=".5" marker-end="url(#ar2)"/>
+
+          <rect x="316" y="30" width="150" height="58" rx="7" fill="#2f6272" opacity=".1"/>
+          <rect x="316" y="30" width="150" height="58" rx="7" fill="none" stroke="#2f6272" stroke-width="1.3"/>
+          <text x="391" y="52" font-family="system-ui" font-size="11.5" font-weight="650" fill="#2f6272" text-anchor="middle">script-src 'sha256-…'</text>
+          <text x="391" y="70" font-family="system-ui" font-size="10.5" fill="#2f6272" text-anchor="middle" opacity=".85">only our own shell script</text>
+          <line x1="276" y1="59" x2="310" y2="59" stroke="currentColor" opacity=".5" marker-end="url(#ar2)"/>
+
+          <!-- profile 2 -->
+          <text x="20" y="146" font-family="system-ui" font-size="11.5" font-weight="700" fill="currentColor" opacity=".55" letter-spacing="1.3">PROFILE 2 — HTML ARTIFACT</text>
+          <rect x="20" y="162" width="96" height="34" rx="6" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="68" y="183" font-family="ui-monospace,monospace" font-size="11.5" fill="currentColor" text-anchor="middle">*.html</text>
+
+          <rect x="156" y="162" width="120" height="34" rx="6" fill="currentColor" opacity=".07"/>
+          <rect x="156" y="162" width="120" height="34" rx="6" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="216" y="183" font-family="system-ui" font-size="11.5" font-weight="600" fill="currentColor" text-anchor="middle">served as-is</text>
+          <line x1="116" y1="179" x2="150" y2="179" stroke="currentColor" opacity=".5" marker-end="url(#ar2)"/>
+
+          <rect x="316" y="150" width="150" height="58" rx="7" fill="currentColor" opacity=".07"/>
+          <rect x="316" y="150" width="150" height="58" rx="7" fill="none" stroke="currentColor" opacity=".5"/>
+          <text x="391" y="172" font-family="system-ui" font-size="11.5" font-weight="650" fill="currentColor" text-anchor="middle">its own JS runs</text>
+          <text x="391" y="190" font-family="system-ui" font-size="10.5" fill="currentColor" text-anchor="middle" opacity=".7">ephemeral data store</text>
+          <line x1="276" y1="179" x2="310" y2="179" stroke="currentColor" opacity=".5" marker-end="url(#ar2)"/>
+
+          <!-- shared web view -->
+          <rect x="516" y="76" width="128" height="86" rx="8" fill="#2f6272" opacity=".1"/>
+          <rect x="516" y="76" width="128" height="86" rx="8" fill="none" stroke="#2f6272" stroke-width="1.4"/>
+          <text x="580" y="112" font-family="system-ui" font-size="13" font-weight="700" fill="#2f6272" text-anchor="middle">WKWebView</text>
+          <text x="580" y="130" font-family="system-ui" font-size="10.5" fill="#2f6272" text-anchor="middle" opacity=".85">WKContentRuleList</text>
+          <text x="580" y="145" font-family="system-ui" font-size="10.5" fill="#2f6272" text-anchor="middle" opacity=".85">blocks all remote</text>
+
+          <path d="M 466 59 L 492 59 Q 506 59 506 73 L 506 100 Q 506 110 510 110" fill="none" stroke="#2f6272" opacity=".8" marker-end="url(#ar2)"/>
+          <path d="M 466 179 L 492 179 Q 506 179 506 165 L 506 138 Q 506 128 510 128" fill="none" stroke="currentColor" opacity=".5" marker-end="url(#ar2)"/>
+
+          <!-- blocked network -->
+          <line x1="644" y1="104" x2="736" y2="104" stroke="#a8474a" stroke-dasharray="4 4" marker-end="url(#arR)"/>
+          <text x="690" y="96" font-family="system-ui" font-size="10" fill="#a8474a" text-anchor="middle">fonts, beacons</text>
+          <g stroke="#a8474a" stroke-width="2.2">
+            <line x1="682" y1="112" x2="698" y2="128"/><line x1="698" y1="112" x2="682" y2="128"/>
+          </g>
+          <text x="756" y="108" font-family="system-ui" font-size="11.5" font-weight="650" fill="#a8474a">internet</text>
+          <text x="756" y="124" font-family="system-ui" font-size="10" fill="#a8474a" opacity=".8">never reached</text>
+
+          <!-- to screen + pdf -->
+          <line x1="580" y1="162" x2="580" y2="196" stroke="#2f6272" marker-end="url(#ar2)"/>
+          <rect x="500" y="200" width="76" height="30" rx="6" fill="none" stroke="#2f6272" opacity=".8"/>
+          <text x="538" y="220" font-family="system-ui" font-size="11" fill="#2f6272" text-anchor="middle">screen</text>
+          <rect x="588" y="200" width="76" height="30" rx="6" fill="none" stroke="#2f6272" opacity=".8"/>
+          <text x="626" y="220" font-family="system-ui" font-size="11" fill="#2f6272" text-anchor="middle">PDF</text>
+          <path d="M 580 162 L 580 186 Q 580 196 570 196" fill="none" stroke="#2f6272" opacity=".8"/>
+          <path d="M 580 186 Q 580 196 600 196" fill="none" stroke="#2f6272" opacity=".8"/>
+
+          <text x="20" y="264" font-family="system-ui" font-size="11.5" fill="currentColor" opacity=".62">Both profiles share one web view, one theme system, one export path.</text>
+          <text x="20" y="282" font-family="system-ui" font-size="11.5" fill="currentColor" opacity=".62">The only difference is how much of the document's own code is allowed to run.</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>Two trust profiles, one renderer.</b> Markdown gets scripting pinned to a single hashed
+        shell script, so nothing embedded in the document can execute. HTML artifacts run their own
+        code — but a compiled content rule list stops every remote request inside WebKit before it
+        leaves the machine, and the toolbar reports the count with a per-document override.
+      </figcaption>
+    </figure>
+
+    <p>Concretely, the hardened configuration is:</p>
+    <ul>
+      <li><strong>A <code>WKContentRuleList</code></strong> compiled once at first launch that blocks every URL except the app's own custom scheme. This is WebKit's own content-blocker engine, so it acts before the request is issued and gives an exact block count.</li>
+      <li><strong>A custom <code>WKURLSchemeHandler</code></strong> serving the generated HTML and any local images from the document's folder, with path traversal rejected. This avoids <code>file://</code> access quirks entirely and keeps read scope explicit.</li>
+      <li><strong><code>WKWebsiteDataStore.nonPersistent()</code></strong> so no cookies, storage, or cache survive between artifacts.</li>
+      <li><strong>Navigation confined to the document.</strong> Clicking an external link hands it to the default browser rather than navigating the artifact away.</li>
+    </ul>
+  </section>
+
+  <!-- ============ 6 ============ -->
+  <section>
+    <h2><span class="no">06</span>PDF export</h2>
+    <p class="dek">Themes are folders, not code <span class="tagv tagv--j" style="margin-left:6px;">Judgment</span></p>
+
+    <p>
+      Use <code>printOperation(with:)</code> driven by a print stylesheet rather than
+      <code>createPDF</code>. The print pipeline is where <code>NSPrintInfo</code> gives you paper
+      size, margins and running headers, and where CSS <code>@page</code> and
+      <code>break-inside: avoid</code> actually apply. <code>createPDF</code> stays as the fast path
+      for a quick unpaginated dump. Verification confirmed both APIs are supported since macOS 11 but
+      could <em>not</em> confirm the typographic quality of either — so the spike renders one
+      code-heavy document through both and the winner takes the primary slot.
+    </p>
+
+    <p>A theme is a directory, which means adding one requires no code:</p>
+<pre><code>Themes/Manuscript.agentiatheme/
+  ├── theme.json      <span class="cm">// name, faces, measure, scale</span>
+  ├── screen.css      <span class="cm">// the reading view</span>
+  └── print.css       <span class="cm">// @page, running heads, break rules</span></code></pre>
+
+    <p>
+      On fonts: the research settled the one genuinely risky question. iA Writer Mono, Duo and
+      Quattro are OFL 1.1 and can be bundled in a commercial app provided the license text ships
+      with them and the reserved names aren't reused on a modified face. IBM Plex, Inter, JetBrains
+      Mono, Source Serif and Literata are OFL too. Charter, Palatino, SF Pro and SF Mono already ship
+      with macOS, so several themes cost zero bundle weight. Budget roughly 4–6 MB for the bundled
+      families.
+    </p>
+  </section>
+
+  <!-- ============ 7 ============ -->
+  <section>
+    <h2><span class="no">07</span>Becoming the default handler</h2>
+    <p class="dek">UTIs, file watching, and the atomic-write trap <span class="tagv tagv--j" style="margin-left:6px;">Judgment</span></p>
+
+    <h3>Registration</h3>
+    <p>
+      Declare <code>net.daringfireball.markdown</code> under <code>UTImportedTypeDeclarations</code>
+      — imported, not exported, because you didn't define it — and reference the system
+      <code>public.html</code>. Set <code>LSHandlerRank</code> to <code>Alternate</code> for both:
+      claiming <code>Owner</code> for a type you don't own is bad manners and Launch Services may
+      ignore it anyway. Then put a <strong>"Make default for .md and .html"</strong> button in
+      settings that calls <code>NSWorkspace.setDefaultApplication(at:toOpen:)</code>, so the user
+      never has to do the Get Info → Change All dance.
+    </p>
+    <p>
+      One thing to check before writing the plist: recent macOS releases may now define a system
+      Markdown UTI. If they do, import that instead of the Daring Fireball identifier.
+    </p>
+
+    <h3>Live reload, and why the obvious approach breaks</h3>
+    <p>
+      Agents almost never write in place — they write a temp file and rename it over the target. That
+      changes the inode, so a <code>DispatchSource</code> watching the original file descriptor goes
+      deaf after the first regeneration, which is exactly when you need it.
+    </p>
+    <p>
+      Watch the <strong>containing directory</strong> with FSEvents and
+      <code>kFSEventStreamCreateFlagFileEvents</code>, filtering for the path. That survives atomic
+      replacement, and it doubles as the folder-mode file list. Coalesce events on a ~60 ms debounce,
+      and <strong>preserve scroll position across reloads</strong> — a live reload that throws you
+      back to the top is worse than no live reload.
+    </p>
+    <p>
+      Keeping the previous contents in memory is what makes the diff view possible. cmark-gfm reports
+      a source line for every node, so each rendered block can carry a <code>data-sourceline</code>
+      attribute, and a line-level diff of the source maps directly onto blocks to highlight.
+    </p>
+  </section>
+
+  <!-- ============ 8 ============ -->
+  <section>
+    <h2><span class="no">08</span>Send to another app</h2>
+    <p class="dek">Ranked by how often it will actually work <span class="tagv tagv--j" style="margin-left:6px;">Judgment</span></p>
+
+    <ol>
+      <li><strong>Multi-representation clipboard.</strong> The highest-value item and the cheapest. Write Markdown, RTF, HTML and plain text to the pasteboard in one go; the destination picks. Paste into a terminal, get source; paste into Mail, get formatting.</li>
+      <li><strong>A real Open With menu.</strong> Enumerate installed handlers with <code>NSWorkspace.urlsForApplications(toOpen:)</code> and open through <code>NSWorkspace.open(_:withApplicationAt:configuration:)</code>. Works for every app on the machine with no per-app integration.</li>
+      <li><strong>Pinned targets, file-first.</strong> For Obsidian specifically: have the user pick the vault folder once, then <em>write the file into the vault</em> and open it with <code>obsidian://open?path=…</code>. Far more robust than stuffing document content through <code>obsidian://new?content=…</code>, which breaks on long artifacts.</li>
+      <li><strong>The system share sheet</strong> via <code>NSSharingServicePicker</code> — Mail, Messages, AirDrop, Notes and any installed share extension, for free.</li>
+      <li><strong>App Intents,</strong> so Shortcuts can call "Export artifact as PDF" from a script. Small surface, high leverage for someone already automating with agents.</li>
+      <li><strong>Drag the PDF out.</strong> An <code>NSFilePromiseProvider</code> on the toolbar's PDF button lets you drag a rendered PDF straight into Finder or a mail composer without saving first.</li>
+    </ol>
+  </section>
+
+  <!-- ============ 9 ============ -->
+  <section>
+    <h2><span class="no">09</span>Editing, and where to stop</h2>
+    <p class="dek">Read mode plus a source toggle is the right v1 <span class="tagv tagv--j" style="margin-left:6px;">Judgment</span></p>
+
+    <p>
+      Typora-style live preview is not a feature, it's a text engine — inline rendering, caret
+      behaviour across rendered and raw runs, selection across block boundaries, undo that spans
+      both. It is most of a year of work and it competes directly with the app you already use for
+      authoring. You said Obsidian owns note-taking; let it.
+    </p>
+    <p>
+      v1: rendered view, plus a source view you can edit and save, re-rendering on every keystroke
+      because a sub-millisecond parse makes that free. If inline editing still appeals later, the
+      cheap version is <strong>click-to-edit-block</strong>: click a paragraph in the rendered view,
+      that one block swaps to a source field, commit re-renders it. Source positions from cmark-gfm
+      make it tractable, and it delivers most of what live preview feels like for a fraction of the
+      cost.
+    </p>
+  </section>
+
+  <!-- ============ 10 ============ -->
+  <section>
+    <h2><span class="no">10</span>Shipping</h2>
+    <p class="dek">Unsandboxed, Developer ID, Sparkle <span class="tagv tagv--j" style="margin-left:6px;">Judgment</span></p>
+
+    <p>
+      Sandboxing fights this app's core workflow. Opening a file from Finder grants access to that
+      file, not its directory — but folder watching, folder mode, and writing into an Obsidian vault
+      all need directory scope, which means security-scoped bookmarks and a permission prompt for
+      every folder an agent writes to. For a tool whose entire premise is "point it at my agent's
+      output directory," that's the wrong trade.
+    </p>
+    <p>
+      Ship <strong>Developer ID, hardened runtime, notarized, updated through Sparkle 2</strong>.
+      That forgoes the Mac App Store, which is what Marked 2 and BBEdit effectively do for their
+      power-user builds. A sandboxed App Store variant with folder features removed is possible
+      later, but shouldn't shape v1.
+    </p>
+  </section>
+
+  <!-- ============ 11 ============ -->
+  <section>
+    <h2><span class="no">11</span>Sequence</h2>
+    <p class="dek">Roughly six weeks of evenings to something you'd set as default</p>
+
+    <div class="phases">
+      <div class="phase gate">
+        <div class="when">Phase 0<small>2–3 days</small></div>
+        <div>
+          <h4>Measure, then decide</h4>
+          <p>The 150-line spike from §04. Produce cold and warm launch-to-first-paint numbers from a real Finder double-click, and render one code-heavy document through both PDF APIs.</p>
+          <p style="margin-top:8px;color:var(--warn);"><strong>Gate:</strong> nothing else starts until this number exists.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="when">Phase 1<small>~2 weeks</small></div>
+        <div>
+          <h4>The reader</h4>
+          <ul>
+            <li>AppKit shell, hardened WKWebView, custom scheme handler</li>
+            <li>cmark-gfm parsing with GFM tables, task lists, footnotes</li>
+            <li>Three reading themes, light and dark</li>
+            <li>Source toggle, in-page find, copy in four representations</li>
+            <li>UTI registration and the "make default" button</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="when">Phase 2<small>~1 week</small></div>
+        <div>
+          <h4>PDF and typography</h4>
+          <ul>
+            <li>Print stylesheet with page breaks, running heads, code-block wrapping</li>
+            <li>Six themes as loadable folders; bundled OFL faces plus license screen</li>
+            <li>Export sheet with live theme preview</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="when">Phase 3<small>~1.5 weeks</small></div>
+        <div>
+          <h4>The agent workflow</h4>
+          <ul>
+            <li>FSEvents folder watching, live reload with scroll preservation</li>
+            <li>Side tabs and folder mode, hidden by default</li>
+            <li><strong>Diff since last write</strong> — the differentiating feature</li>
+            <li>Blocked-request badge with per-document override</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="when">Phase 4<small>~1 week</small></div>
+        <div>
+          <h4>Reach</h4>
+          <ul>
+            <li>Send-to menu, pinned Obsidian vault target, share sheet</li>
+            <li>Quick Look extension sharing the render framework</li>
+            <li>Syntax highlighting via tree-sitter for the top dozen languages</li>
+            <li>Notarization, Sparkle feed, first build you'd give someone</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="when">Later<small>if wanted</small></div>
+        <div>
+          <h4>Deferred on purpose</h4>
+          <p>Mermaid and KaTeX behind a per-document opt-in; App Intents for Shortcuts; click-to-edit blocks; a sandboxed App Store build. None of these belong in the first version.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 12 ============ -->
+  <section>
+    <h2><span class="no">12</span>Risks</h2>
+    <p class="dek">What could make this not worth finishing</p>
+
+    <div class="risks">
+      <div class="risk">
+        <span class="sev s-hi">Highest</span>
+        <h4>WKWebView cold start blows the budget</h4>
+        <p>If a Finder double-click takes half a second to paint, the app can't displace Quick Look and the premise weakens.</p>
+        <div class="mit"><b>Mitigation:</b> Phase 0 measures it before anything is built on top. The Quick Look extension is the fallback and is worth shipping regardless.</div>
+      </div>
+      <div class="risk">
+        <span class="sev s-md">Medium</span>
+        <h4>WebKit's PDF output isn't good enough</h4>
+        <p>Verification confirmed the API works but said nothing about typographic quality — page breaks and code wrapping are unproven.</p>
+        <div class="mit"><b>Mitigation:</b> tested in Phase 0 on a deliberately hostile document. If both APIs disappoint, fall back to paginating in the web view with explicit page containers.</div>
+      </div>
+      <div class="risk">
+        <span class="sev s-md">Medium</span>
+        <h4>cmark-gfm parser CVEs</h4>
+        <p>The library has a history of quadratic blow-up on crafted input, and this app opens files you didn't write.</p>
+        <div class="mit"><b>Mitigation:</b> pin a version past the fixed range, parse off the main thread with a timeout, and fail to source view rather than hanging.</div>
+      </div>
+      <div class="risk">
+        <span class="sev s-lo">Low</span>
+        <h4>Scope creep into an editor</h4>
+        <p>Every markdown viewer eventually grows an editor, then a file tree, then plugins — and becomes the thing you were avoiding.</p>
+        <div class="mit"><b>Mitigation:</b> the toolbar is capped at eight items. Anything new displaces something old.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 13 ============ -->
+  <section>
+    <h2><span class="no">13</span>Sources that carried weight</h2>
+    <p class="dek">Verified at source-code level where possible</p>
+    <ul class="sources">
+      <li><code>github.com/sbarex/QLMarkdown</code> — cmark-gfm into <code>loadHTMLString</code>, in both the app and its Quick Look extension. The closest existing thing to this proposal.</li>
+      <li><code>github.com/MacDownApp/macdown</code> — Hoedown into a legacy <code>WebView</code>. Architecturally instructive, but built on a deprecated delegate family; last release 2021.</li>
+      <li><code>github.com/swiftlang/swift-cmark</code> — the throughput benchmark, independently replicated in 2026 at 20–26 ms/MB.</li>
+      <li><code>github.com/gonzalezreal/textual</code> and <code>/swift-markdown-ui</code> — the maintainer's own redirection from MarkdownUI to Textual, and Textual's SwiftUI <code>Text</code>-based pipeline.</li>
+      <li><code>github.com/krzyzanowskim/STTextView</code> — the standing TextKit 2 radar list and a changelog of viewport workarounds running into April 2026.</li>
+      <li><code>github.com/iaolo/iA-Fonts</code> — per-family OFL 1.1 licenses with dual reserved names.</li>
+      <li>Apple documentation for <code>createPDF(configuration:completionHandler:)</code> and <code>printOperation(with:)</code> — both introduced in macOS 11.</li>
+    </ul>
+  </section>
+
+  <p class="endnote">
+    <b>On confidence.</b> The rendering architecture in §01–§03 is well supported: it was verified by
+    reading source code and package manifests rather than documentation prose, and the competing
+    options were checked adversarially rather than taken at face value. The platform sections —
+    §05 through §10 — returned nothing verifiable and are engineering judgment from experience;
+    treat them as a considered starting point rather than settled fact. The launch budget in §04 is
+    genuinely unknown, and the plan is built so that finding out costs three days instead of three
+    weeks.
+  </p>
+
+</div>

@@ -1,0 +1,1325 @@
+<title>Agentia — Interface Study</title>
+<style>
+  /* ============================================================
+     PAGE TOKENS — light is the base; dark redefines tokens only
+     ============================================================ */
+  :root {
+    --ink:            #16181d;
+    --ink-soft:       #4d525e;
+    --ink-faint:      #838a99;
+    --ground:         #e6e5e2;
+    --ground-2:       #f2f1ee;
+    --rule:           #00000016;
+    --rule-strong:    #00000028;
+    --accent:         #2f6272;
+    --accent-soft:    #2f627218;
+    --amber:          #a8681f;
+    --stage-a:        #d8d7d3;
+    --stage-b:        #c3c4c6;
+    --shadow:         0 1px 1px #0000000f, 0 8px 18px -6px #00000024, 0 30px 60px -20px #0000002e;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --serif: "Iowan Old Style", "Charter", "Palatino Linotype", Palatino, Georgia, serif;
+    --mono: "SF Mono", "Menlo", "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink:          #e7e7e6;
+      --ink-soft:     #a2a6b0;
+      --ink-faint:    #6d7381;
+      --ground:       #111317;
+      --ground-2:     #191b20;
+      --rule:         #ffffff14;
+      --rule-strong:  #ffffff22;
+      --accent:       #6aa9bc;
+      --accent-soft:  #6aa9bc1f;
+      --amber:        #d99a4a;
+      --stage-a:      #0d0f12;
+      --stage-b:      #1a1d23;
+      --shadow:       0 1px 1px #00000055, 0 10px 24px -6px #00000077, 0 40px 70px -24px #000000aa;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink:          #e7e7e6;
+    --ink-soft:     #a2a6b0;
+    --ink-faint:    #6d7381;
+    --ground:       #111317;
+    --ground-2:     #191b20;
+    --rule:         #ffffff14;
+    --rule-strong:  #ffffff22;
+    --accent:       #6aa9bc;
+    --accent-soft:  #6aa9bc1f;
+    --amber:        #d99a4a;
+    --stage-a:      #0d0f12;
+    --stage-b:      #1a1d23;
+    --shadow:       0 1px 1px #00000055, 0 10px 24px -6px #00000077, 0 40px 70px -24px #000000aa;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ---------- page header ---------- */
+  .masthead { padding: 64px 0 34px; display: flex; flex-direction: column; gap: 14px; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 600;
+  }
+  .masthead h1 {
+    margin: 0; font-family: var(--serif); font-weight: 400;
+    font-size: clamp(30px, 4.4vw, 48px); line-height: 1.1; letter-spacing: -.015em;
+    text-wrap: balance;
+  }
+  .masthead h1 em { font-style: italic; color: var(--accent); }
+  .lede {
+    margin: 0; max-width: 62ch; color: var(--ink-soft); font-size: 16.5px; line-height: 1.62;
+  }
+  .metaline {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; padding-top: 6px;
+    font-size: 12.5px; color: var(--ink-faint);
+  }
+  .metaline span { display: inline-flex; align-items: center; gap: 6px; }
+  .metaline b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ---------- section furniture ---------- */
+  .sec { padding-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+  .sec-head h2 {
+    margin: 0; font-family: var(--serif); font-weight: 400; font-size: 25px; letter-spacing: -.01em;
+  }
+  .sec-head .tag {
+    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; padding-top: 2px;
+  }
+  .sec-note { margin: 0 0 26px; max-width: 66ch; color: var(--ink-soft); font-size: 14.5px; }
+
+  /* ============================================================
+     THE APP WINDOW MOCK — own appearance tokens, independent of page
+     ============================================================ */
+  .stage {
+    border-radius: 14px;
+    padding: clamp(20px, 4vw, 52px) clamp(14px, 3vw, 40px);
+    background: linear-gradient(148deg, var(--stage-a), var(--stage-b));
+    border: 1px solid var(--rule);
+    overflow: hidden;
+  }
+
+  .win {
+    /* light appearance */
+    --w-chrome:   #ececed;
+    --w-chrome-2: #e2e2e4;
+    --w-canvas:   #ffffff;
+    --w-side:     #f0efee;
+    --w-text:     #1d1f24;
+    --w-dim:      #6c717c;
+    --w-faint:    #9aa0ab;
+    --w-rule:     #0000001a;
+    --w-rule-2:   #00000010;
+    --w-hover:    #00000009;
+    --w-sel:      #2f627216;
+    --w-accent:   #2f6272;
+    --w-amber:    #a8681f;
+    --w-add:      #2f7350;
+    --w-add-bg:   #2f735014;
+    --w-mod-bg:   #a8681f14;
+    --w-code-bg:  #f4f4f2;
+
+    max-width: 1000px; margin: 0 auto;
+    border-radius: 11px;
+    background: var(--w-canvas);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--rule-strong);
+    overflow: hidden;
+    color: var(--w-text);
+  }
+  .win[data-appearance="dark"] {
+    --w-chrome:   #313236;
+    --w-chrome-2: #292a2e;
+    --w-canvas:   #1f2126;
+    --w-side:     #26282d;
+    --w-text:     #e4e5e7;
+    --w-dim:      #969ba5;
+    --w-faint:    #6b707b;
+    --w-rule:     #ffffff1c;
+    --w-rule-2:   #ffffff12;
+    --w-hover:    #ffffff0d;
+    --w-sel:      #6aa9bc22;
+    --w-accent:   #7bb6c8;
+    --w-amber:    #d99a4a;
+    --w-add:      #62b48a;
+    --w-add-bg:   #62b48a1c;
+    --w-mod-bg:   #d99a4a18;
+    --w-code-bg:  #191b1f;
+  }
+
+  /* ---- title bar / unified toolbar ---- */
+  .tbar {
+    display: flex; align-items: center; gap: 10px;
+    height: 46px; padding: 0 12px;
+    background: var(--w-chrome);
+    border-bottom: 1px solid var(--w-rule);
+  }
+  .lights { display: flex; gap: 8px; padding-right: 6px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .lights i:nth-child(1) { background: #ec6a5e; }
+  .lights i:nth-child(2) { background: #f4bf4f; }
+  .lights i:nth-child(3) { background: #61c554; }
+
+  .tsep { width: 1px; height: 20px; background: var(--w-rule); margin: 0 2px; }
+  .tspacer { flex: 1; }
+
+  .tbtn {
+    appearance: none; border: 0; background: transparent; color: var(--w-dim);
+    height: 27px; min-width: 29px; padding: 0 8px; border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font: inherit; font-size: 12.5px; cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+  }
+  .tbtn:hover { background: var(--w-hover); color: var(--w-text); }
+  .tbtn[aria-pressed="true"] { background: var(--w-sel); color: var(--w-accent); }
+  .tbtn:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 1px; }
+  .tbtn svg { width: 15px; height: 15px; display: block; }
+
+  /* segmented control */
+  .seg {
+    display: inline-flex; padding: 2px; border-radius: 7px;
+    background: var(--w-chrome-2); border: 1px solid var(--w-rule-2);
+  }
+  .seg button {
+    appearance: none; border: 0; background: transparent; color: var(--w-dim);
+    font: inherit; font-size: 12px; font-weight: 500;
+    padding: 3px 11px; border-radius: 5px; cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--w-canvas); color: var(--w-text);
+    box-shadow: 0 1px 2px #00000018;
+  }
+  .seg button:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 1px; }
+
+  /* doc title in the toolbar centre */
+  .doctitle {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 600; color: var(--w-text);
+    min-width: 0;
+  }
+  .doctitle .path { color: var(--w-faint); font-weight: 400; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .02em;
+    padding: 2.5px 7px; border-radius: 20px; white-space: nowrap;
+    border: 1px solid currentColor; line-height: 1.3;
+  }
+  .chip--live  { color: var(--w-add); }
+  .chip--block { color: var(--w-amber); cursor: pointer; }
+  .chip .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .chip--live .dot { animation: pulse 2.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .28; } }
+  @media (prefers-reduced-motion: reduce) { .chip--live .dot { animation: none; } }
+
+  /* ---- body: sidebar + canvas ---- */
+  .wbody { display: flex; height: 552px; background: var(--w-canvas); }
+
+  .side {
+    width: 228px; flex: 0 0 228px;
+    background: var(--w-side);
+    border-right: 1px solid var(--w-rule);
+    display: flex; flex-direction: column;
+    margin-left: 0;
+    transition: margin-left .26s cubic-bezier(.32,.72,0,1), opacity .2s ease;
+  }
+  .win[data-sidebar="hidden"] .side { margin-left: -228px; opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { .side { transition: none; } }
+
+  .side-head {
+    padding: 12px 14px 8px; font-size: 10.5px; font-weight: 700;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--w-faint);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .side-scroll { overflow-y: auto; padding: 0 8px 12px; flex: 1; }
+  .tabitem {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 9px; border-radius: 6px; cursor: pointer;
+    font-size: 12.5px; color: var(--w-dim); line-height: 1.3;
+    border: 0; background: transparent; width: 100%; text-align: left; font-family: inherit;
+  }
+  .tabitem:hover { background: var(--w-hover); }
+  .tabitem[aria-current="true"] { background: var(--w-sel); color: var(--w-text); font-weight: 600; }
+  .tabitem:focus-visible { outline: 2px solid var(--w-accent); outline-offset: -2px; }
+  .tabitem .ft {
+    flex: 0 0 auto; width: 17px; height: 17px; border-radius: 3.5px;
+    display: grid; place-items: center;
+    font-size: 7.5px; font-weight: 800; letter-spacing: .02em; color: #fff;
+  }
+  .ft--md   { background: #4a7c8f; }
+  .ft--html { background: #b0713a; }
+  .tabitem .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tabitem .mark {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--w-add); flex: 0 0 auto;
+  }
+  .side-foot {
+    border-top: 1px solid var(--w-rule); padding: 9px 12px;
+    font-size: 11px; color: var(--w-faint);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* ---- canvas ---- */
+  .canvas { flex: 1; overflow-y: auto; position: relative; min-width: 0; }
+  .pane { display: none; }
+  .pane[data-active="true"] { display: block; }
+
+  /* reading measure */
+  .reader { max-width: 680px; margin: 0 auto; padding: 46px 40px 80px; }
+
+  /* ============================================================
+     READING THEMES — swapped on the .canvas element
+     ============================================================ */
+  .reader { font-family: var(--serif); font-size: 17px; line-height: 1.68; color: var(--w-text); }
+  .canvas[data-rtheme="quattro"] .reader {
+    font-family: "iA Writer Quattro", "Iowan Old Style", Charter, Georgia, serif;
+    font-size: 16.5px; line-height: 1.7;
+  }
+  .canvas[data-rtheme="sans"] .reader {
+    font-family: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.64; letter-spacing: -.003em;
+  }
+  .canvas[data-rtheme="mono"] .reader {
+    font-family: var(--mono); font-size: 14px; line-height: 1.72; max-width: 700px;
+  }
+
+  .reader h1 {
+    font-size: 1.62em; font-weight: 600; line-height: 1.2; letter-spacing: -.015em;
+    margin: 0 0 .1em; text-wrap: balance;
+  }
+  .reader .subhead { color: var(--w-faint); font-size: .82em; margin: 0 0 1.9em; font-family: var(--sans); }
+  .reader h2 {
+    font-size: 1.16em; font-weight: 600; line-height: 1.3; letter-spacing: -.008em;
+    margin: 2.1em 0 .55em; text-wrap: balance;
+  }
+  .reader h3 { font-size: 1em; font-weight: 700; margin: 1.7em 0 .4em; }
+  .reader p { margin: 0 0 1.05em; }
+  .reader ul, .reader ol { margin: 0 0 1.05em; padding-left: 1.35em; }
+  .reader li { margin-bottom: .38em; }
+  .reader li::marker { color: var(--w-faint); }
+  .reader strong { font-weight: 700; }
+  .reader a { color: var(--w-accent); text-underline-offset: 2px; }
+
+  .reader blockquote {
+    margin: 1.3em 0; padding: 2px 0 2px 18px;
+    border-left: 2px solid var(--w-accent);
+    color: var(--w-dim); font-style: italic;
+  }
+  .reader code {
+    font-family: var(--mono); font-size: .82em;
+    background: var(--w-code-bg); padding: .12em .38em; border-radius: 4px;
+    border: 1px solid var(--w-rule-2);
+  }
+  .reader pre {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.6;
+    background: var(--w-code-bg); border: 1px solid var(--w-rule-2);
+    border-radius: 8px; padding: 13px 15px; margin: 1.25em 0;
+    overflow-x: auto; position: relative;
+  }
+  .reader pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+  .k { color: #9a5ea8; } .s { color: #3f7d5a; } .c { color: var(--w-faint); font-style: italic; }
+  .n { color: #a8681f; } .f { color: #2f6272; }
+  .win[data-appearance="dark"] .k { color: #c99ad4; }
+  .win[data-appearance="dark"] .s { color: #7fc4a0; }
+  .win[data-appearance="dark"] .n { color: #e0a961; }
+  .win[data-appearance="dark"] .f { color: #7bb6c8; }
+
+  .reader table {
+    width: 100%; border-collapse: collapse; margin: 1.3em 0;
+    font-family: var(--sans); font-size: .8em; font-variant-numeric: tabular-nums;
+  }
+  .reader th {
+    text-align: left; font-weight: 650; padding: 7px 10px;
+    border-bottom: 1.5px solid var(--w-rule); color: var(--w-dim);
+    font-size: .92em; letter-spacing: .02em; text-transform: uppercase;
+  }
+  .reader td { padding: 7px 10px; border-bottom: 1px solid var(--w-rule-2); }
+  .reader td:not(:first-child), .reader th:not(:first-child) { text-align: right; }
+  .reader hr { border: 0; border-top: 1px solid var(--w-rule); margin: 2em 0; }
+
+  /* ---- diff decorations ---- */
+  .dblock { position: relative; }
+  .canvas[data-diff="on"] .dblock[data-d="add"] {
+    background: var(--w-add-bg); box-shadow: -14px 0 0 var(--w-add-bg), 14px 0 0 var(--w-add-bg);
+    border-left: 2px solid var(--w-add); padding-left: 12px; margin-left: -14px;
+  }
+  .canvas[data-diff="on"] .dblock[data-d="mod"] {
+    background: var(--w-mod-bg); box-shadow: -14px 0 0 var(--w-mod-bg), 14px 0 0 var(--w-mod-bg);
+    border-left: 2px solid var(--w-amber); padding-left: 12px; margin-left: -14px;
+  }
+  .diffbar {
+    display: none; align-items: center; gap: 10px;
+    padding: 8px 40px; font-family: var(--sans); font-size: 12px;
+    background: var(--w-mod-bg); border-bottom: 1px solid var(--w-rule);
+    color: var(--w-dim); position: sticky; top: 0; z-index: 3;
+    backdrop-filter: blur(8px);
+  }
+  .canvas[data-diff="on"] .diffbar { display: flex; }
+  .diffbar b { color: var(--w-text); font-weight: 650; }
+  .diffbar .spacer { flex: 1; }
+  .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  /* ---- source pane ---- */
+  .src {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.75;
+    padding: 22px 26px 60px; white-space: pre-wrap; color: var(--w-text);
+    tab-size: 2;
+  }
+  .src .gut { color: var(--w-faint); user-select: none; }
+  .src .h  { color: var(--w-accent); font-weight: 700; }
+  .src .em { color: var(--w-text); font-weight: 700; }
+  .src .ln { color: var(--w-add); }
+  .src .fence { color: var(--w-faint); }
+
+  /* ---- html artifact pane ---- */
+  .htmldoc { padding: 0; font-family: var(--sans); }
+  .htmldoc-inner { padding: 30px 34px 60px; max-width: 780px; margin: 0 auto; }
+  .hd-title { font-size: 20px; font-weight: 650; margin: 0 0 3px; letter-spacing: -.01em; }
+  .hd-sub { font-size: 12.5px; color: var(--w-faint); margin: 0 0 22px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+  .kpi {
+    border: 1px solid var(--w-rule); border-radius: 8px; padding: 11px 12px;
+    background: var(--w-code-bg);
+  }
+  .kpi .lab {
+    font-size: 9.5px; letter-spacing: .11em; text-transform: uppercase;
+    color: var(--w-faint); font-weight: 700; margin-bottom: 5px;
+  }
+  .kpi .val { font-size: 19px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .kpi .delta { font-size: 10.5px; font-weight: 600; margin-top: 1px; }
+  .up { color: var(--w-add); } .down { color: #b4544f; }
+  .win[data-appearance="dark"] .down { color: #e08b86; }
+  .chartbox {
+    border: 1px solid var(--w-rule); border-radius: 8px; padding: 14px 14px 6px;
+    background: var(--w-code-bg);
+  }
+  .chartbox h4 {
+    margin: 0 0 12px; font-size: 11px; font-weight: 700;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--w-faint);
+  }
+
+  /* ---- export sheet ---- */
+  .sheetwrap {
+    position: absolute; inset: 0; display: none; z-index: 20;
+    align-items: flex-start; justify-content: center;
+  }
+  .sheetwrap[data-open="true"] { display: flex; }
+  .sheetscrim { position: absolute; inset: 0; background: #0000002e; }
+  .sheet {
+    position: relative; width: min(620px, 92%); margin-top: 0;
+    background: var(--w-chrome); border: 1px solid var(--w-rule);
+    border-radius: 0 0 11px 11px; box-shadow: 0 22px 44px -12px #00000055;
+    padding: 20px 22px 18px;
+    animation: drop .22s cubic-bezier(.32,.72,0,1);
+  }
+  @keyframes drop { from { transform: translateY(-14px); opacity: .4; } }
+  @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+  .sheet h3 { margin: 0 0 2px; font-size: 14.5px; font-weight: 650; }
+  .sheet .sh-sub { margin: 0 0 16px; font-size: 12px; color: var(--w-dim); }
+  .themegrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-bottom: 16px; }
+  .tcard {
+    border: 1.5px solid var(--w-rule); border-radius: 7px; overflow: hidden;
+    cursor: pointer; background: var(--w-canvas); text-align: left;
+    padding: 0; font-family: inherit; transition: border-color .12s ease;
+  }
+  .tcard:hover { border-color: var(--w-faint); }
+  .tcard[aria-pressed="true"] { border-color: var(--w-accent); box-shadow: 0 0 0 2px var(--w-sel); }
+  .tcard:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 1px; }
+  .tprev {
+    height: 62px; padding: 8px 9px; background: #fff; color: #222;
+    overflow: hidden; border-bottom: 1px solid var(--w-rule-2);
+  }
+  .tprev .ph { font-size: 7.5px; font-weight: 700; margin-bottom: 3px; line-height: 1.1; }
+  .tprev .pl { height: 2px; background: #0000001f; border-radius: 1px; margin-bottom: 3px; }
+  .tprev .pl.s { width: 62%; } .tprev .pl.m { width: 88%; }
+  .tcard .tname { display: block; padding: 6px 9px 7px; font-size: 11px; font-weight: 600; }
+  .tcard .tface { display: block; font-size: 9.5px; color: var(--w-faint); font-weight: 400; }
+  .sheet-row { display: flex; align-items: center; gap: 10px; }
+  .sheet-row .spacer { flex: 1; }
+  .btn {
+    appearance: none; font: inherit; font-size: 12.5px; font-weight: 500;
+    padding: 5px 15px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--w-rule); background: var(--w-canvas); color: var(--w-text);
+  }
+  .btn--p { background: var(--w-accent); border-color: transparent; color: #fff; font-weight: 600; }
+  .btn:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+  .selectish {
+    font-size: 12px; color: var(--w-dim); display: inline-flex; align-items: center; gap: 6px;
+  }
+
+  /* ---- send menu ---- */
+  .menu {
+    position: absolute; top: 44px; right: 14px; z-index: 25; display: none;
+    width: 250px; padding: 5px;
+    background: var(--w-chrome); border: 1px solid var(--w-rule-2);
+    border-radius: 8px; box-shadow: 0 12px 30px -8px #00000055;
+  }
+  .menu[data-open="true"] { display: block; }
+  .menu .mlab {
+    font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--w-faint); font-weight: 700; padding: 7px 9px 4px;
+  }
+  .mitem {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 6px 9px; border-radius: 5px; border: 0; background: transparent;
+    font: inherit; font-size: 12.5px; color: var(--w-text); cursor: pointer; text-align: left;
+  }
+  .mitem:hover { background: var(--w-sel); }
+  .mitem:focus-visible { outline: 2px solid var(--w-accent); outline-offset: -2px; }
+  .mitem .kbd { margin-left: auto; font-size: 10.5px; color: var(--w-faint); font-family: var(--mono); }
+  .mitem .ico { width: 16px; height: 16px; border-radius: 3.5px; display: grid; place-items: center; font-size: 8px; font-weight: 800; color: #fff; }
+  .msep { height: 1px; background: var(--w-rule); margin: 4px 6px; }
+
+  /* ============================================================
+     CONTROL RAIL under the window
+     ============================================================ */
+  .rail {
+    max-width: 1000px; margin: 22px auto 0;
+    display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: center;
+    padding: 14px 18px; border-radius: 10px;
+    background: var(--ground-2); border: 1px solid var(--rule);
+  }
+  .rail-grp { display: flex; align-items: center; gap: 8px; }
+  .rail-grp > .rl {
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); margin-right: 2px;
+  }
+  .pill {
+    appearance: none; font: inherit; font-size: 12px; font-weight: 500;
+    padding: 4px 11px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--rule-strong); background: transparent; color: var(--ink-soft);
+    transition: all .12s ease;
+  }
+  .pill:hover { border-color: var(--accent); color: var(--accent); }
+  .pill[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ============================================================
+     annotation cards
+     ============================================================ */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(252px, 1fr)); gap: 1px;
+           background: var(--rule); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .card { background: var(--ground-2); padding: 18px 19px 20px; }
+  .card h4 {
+    margin: 0 0 7px; font-size: 13.5px; font-weight: 650; letter-spacing: -.005em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h4 .num {
+    font-family: var(--mono); font-size: 10px; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 4px; padding: 1px 4px; font-weight: 700;
+  }
+  .card p { margin: 0; font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
+  .card p + p { margin-top: 8px; }
+  .card .kbdi {
+    font-family: var(--mono); font-size: 11px; background: var(--accent-soft);
+    color: var(--accent); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--accent-soft);
+  }
+
+  /* ---------- pdf gallery ---------- */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 16px; }
+  .gcard {
+    border: 1px solid var(--rule); border-radius: 10px; overflow: hidden;
+    background: var(--ground-2);
+  }
+  .page {
+    aspect-ratio: 8.5 / 11; background: #fff; color: #1a1a1a;
+    padding: 20px 18px; overflow: hidden; border-bottom: 1px solid var(--rule);
+  }
+  .page .pt { line-height: 1.15; margin: 0 0 5px; }
+  .page .pm { font-size: 5.4px; letter-spacing: .1em; text-transform: uppercase; color: #999; margin: 0 0 9px; }
+  .page .pp { font-size: 5.6px; line-height: 1.62; margin: 0 0 5px; color: #333; }
+  .page .ph2 { margin: 9px 0 4px; line-height: 1.2; }
+  .page .prule { height: 1px; background: #0000001a; margin: 8px 0; }
+  .page .pcode {
+    font-family: var(--mono); font-size: 4.8px; line-height: 1.5;
+    background: #f4f4f2; border-radius: 2px; padding: 4px 5px; color: #444; margin: 5px 0;
+  }
+  .gmeta { padding: 11px 13px 13px; }
+  .gmeta .gname { font-size: 13px; font-weight: 650; margin: 0 0 3px; }
+  .gmeta .gface { font-size: 11.5px; color: var(--ink-faint); margin: 0 0 6px; font-family: var(--mono); }
+  .gmeta .guse { font-size: 12px; color: var(--ink-soft); margin: 0; line-height: 1.45; }
+  .lic {
+    display: inline-block; margin-top: 8px; font-size: 9.5px; font-weight: 700;
+    letter-spacing: .09em; text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .lic--sys { background: #8a8a8a1f; color: var(--ink-faint); }
+
+  /* page themes */
+  .page--manuscript .pt { font-family: var(--serif); font-size: 13px; font-weight: 400; }
+  .page--manuscript .ph2 { font-family: var(--serif); font-size: 7.5px; font-weight: 600; }
+  .page--manuscript .pp { font-family: var(--serif); }
+  .page--report .pt { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: -.02em; }
+  .page--report .ph2 { font-family: var(--sans); font-size: 7px; font-weight: 700; }
+  .page--report .pp { font-family: var(--sans); font-size: 5.4px; }
+  .page--technical .pt { font-family: var(--sans); font-size: 11px; font-weight: 650; }
+  .page--technical .ph2 { font-family: var(--mono); font-size: 6.5px; font-weight: 700; }
+  .page--technical .pp { font-family: var(--sans); font-size: 5.4px; }
+  .page--editorial .pt { font-family: "Palatino Linotype", Palatino, Georgia, serif; font-size: 14px; font-style: italic; font-weight: 400; }
+  .page--editorial .ph2 { font-family: "Palatino Linotype", Palatino, Georgia, serif; font-size: 7.5px; font-weight: 600; }
+  .page--editorial .pp { font-family: "Palatino Linotype", Palatino, Georgia, serif; font-size: 6px; line-height: 1.75; }
+  .page--compact { padding: 14px 13px; }
+  .page--compact .pt { font-family: var(--sans); font-size: 9px; font-weight: 700; }
+  .page--compact .ph2 { font-family: var(--sans); font-size: 5.8px; font-weight: 700; }
+  .page--compact .pp { font-family: var(--sans); font-size: 4.6px; line-height: 1.5; }
+  .page--terminal { background: #16181b; }
+  .page--terminal .pt { font-family: var(--mono); font-size: 9.5px; font-weight: 700; color: #e6e6e6; }
+  .page--terminal .pm { color: #666; }
+  .page--terminal .ph2 { font-family: var(--mono); font-size: 6px; font-weight: 700; color: #7bb6c8; }
+  .page--terminal .pp { font-family: var(--mono); font-size: 5px; color: #bcbcbc; line-height: 1.6; }
+  .page--terminal .prule { background: #ffffff1f; }
+  .page--terminal .pcode { background: #22262b; color: #9fd3b0; }
+
+  /* ---------- footnote ---------- */
+  .foot {
+    margin-top: 76px; padding-top: 22px; border-top: 1px solid var(--rule);
+    font-size: 12.5px; color: var(--ink-faint); max-width: 74ch; line-height: 1.6;
+  }
+  .foot b { color: var(--ink-soft); }
+
+  @media (max-width: 860px) {
+    .wbody { height: auto; min-height: 460px; }
+    .side { position: absolute; height: 100%; z-index: 5; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .themegrid { grid-template-columns: repeat(2, 1fr); }
+    .doctitle .path { display: none; }
+  }
+  @media (max-width: 620px) {
+    .tbtn span.lbl { display: none; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Interface study · working name “Agentia”</div>
+    <h1>A reader for the things your agents <em>leave behind</em>.</h1>
+    <p class="lede">
+      Markdown and HTML open in the same window, render immediately, and get out of the way.
+      Not a note-taker, not an IDE — a place to read an artifact, see what changed since the last
+      run, and push it somewhere useful.
+    </p>
+    <div class="metaline">
+      <span><b>Swift 6</b> · AppKit shell</span>
+      <span><b>WebKit</b> rendering, offline-locked</span>
+      <span><b>cmark-gfm</b> parsing in-process</span>
+      <span>Everything below is <b>clickable</b></span>
+    </div>
+  </header>
+
+  <!-- ================= THE WINDOW ================= -->
+  <section class="sec" style="padding-top:34px;">
+    <div class="stage">
+      <div class="win" id="win" data-appearance="light" data-sidebar="hidden">
+
+        <!-- toolbar -->
+        <div class="tbar">
+          <div class="lights"><i></i><i></i><i></i></div>
+
+          <button class="tbtn" id="sideToggle" aria-pressed="false" title="Show documents (⌘⇧E)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="2"/><path d="M6 2.6v10.8"/>
+            </svg>
+          </button>
+
+          <div class="tsep"></div>
+
+          <div class="doctitle">
+            <span id="docName">eval-report.md</span>
+            <span class="path" id="docPath">~/agents/out</span>
+            <span class="chip chip--live" id="liveChip"><span class="dot"></span>LIVE</span>
+            <span class="chip chip--block" id="blockChip" style="display:none;">⚠ 2 REQUESTS BLOCKED</span>
+          </div>
+
+          <div class="tspacer"></div>
+
+          <div class="seg" role="group" aria-label="View mode">
+            <button id="mRead" aria-pressed="true">Read</button>
+            <button id="mSource" aria-pressed="false">Source</button>
+            <button id="mDiff" aria-pressed="false">Diff</button>
+          </div>
+
+          <div class="tsep"></div>
+
+          <button class="tbtn" id="aaBtn" title="Typography">
+            <span style="font-family:var(--serif);font-size:14px;">Aa</span>
+          </button>
+
+          <button class="tbtn" id="copyBtn" title="Copy (⌘C)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <rect x="5" y="5" width="9" height="9" rx="1.8"/><path d="M11 5V3.6A1.6 1.6 0 0 0 9.4 2H3.6A1.6 1.6 0 0 0 2 3.6v5.8A1.6 1.6 0 0 0 3.6 11H5"/>
+            </svg>
+            <span class="lbl">Copy</span>
+          </button>
+
+          <button class="tbtn" id="pdfBtn" title="Export PDF (⌘P)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M8 1.8v8.4M4.8 7l3.2 3.2L11.2 7"/><path d="M2.4 12.2v1.2a.8.8 0 0 0 .8.8h9.6a.8.8 0 0 0 .8-.8v-1.2"/>
+            </svg>
+            <span class="lbl">PDF</span>
+          </button>
+
+          <button class="tbtn" id="sendBtn" title="Send to…">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M14.2 1.8 7.4 8.6M14.2 1.8 9.9 14.2 7.4 8.6 1.8 6.1z"/>
+            </svg>
+            <span class="lbl">Send</span>
+          </button>
+        </div>
+
+        <!-- send menu -->
+        <div class="menu" id="sendMenu">
+          <div class="mlab">Copy as</div>
+          <button class="mitem">Markdown source<span class="kbd">⌘C</span></button>
+          <button class="mitem">Rich text<span class="kbd">⌥⌘C</span></button>
+          <button class="mitem">Rendered HTML<span class="kbd">⇧⌘C</span></button>
+          <div class="msep"></div>
+          <div class="mlab">Open with</div>
+          <button class="mitem"><span class="ico" style="background:#6b4fbb;">O</span>Obsidian — Research vault<span class="kbd">⌘1</span></button>
+          <button class="mitem"><span class="ico" style="background:#2d7fd3;">VS</span>Visual Studio Code<span class="kbd">⌘2</span></button>
+          <button class="mitem"><span class="ico" style="background:#444;">S</span>Safari</button>
+          <div class="msep"></div>
+          <div class="mlab">Deliver</div>
+          <button class="mitem">Save PDF to Desktop</button>
+          <button class="mitem">Share…</button>
+        </div>
+
+        <!-- body -->
+        <div class="wbody">
+
+          <!-- sidebar -->
+          <aside class="side">
+            <div class="side-head"><span>~/agents/out</span><span style="letter-spacing:0;">7</span></div>
+            <div class="side-scroll">
+              <button class="tabitem" aria-current="true">
+                <span class="ft ft--md">MD</span><span class="nm">eval-report.md</span><span class="mark"></span>
+              </button>
+              <button class="tabitem">
+                <span class="ft ft--html">HTM</span><span class="nm">latency-dashboard.html</span>
+              </button>
+              <button class="tabitem">
+                <span class="ft ft--md">MD</span><span class="nm">retrieval-notes.md</span>
+              </button>
+              <button class="tabitem">
+                <span class="ft ft--md">MD</span><span class="nm">migration-plan.md</span>
+              </button>
+              <button class="tabitem">
+                <span class="ft ft--html">HTM</span><span class="nm">cost-breakdown.html</span>
+              </button>
+              <button class="tabitem">
+                <span class="ft ft--md">MD</span><span class="nm">failure-taxonomy.md</span>
+              </button>
+              <button class="tabitem">
+                <span class="ft ft--md">MD</span><span class="nm">README.md</span>
+              </button>
+            </div>
+            <div class="side-foot">
+              <span class="chip chip--live" style="border:0;padding:0;"><span class="dot"></span></span>
+              Watching folder · newest first
+            </div>
+          </aside>
+
+          <!-- canvas -->
+          <div class="canvas" id="canvas" data-rtheme="serif" data-diff="off">
+
+            <div class="diffbar">
+              <span><b>3 blocks changed</b> since the 14:22:07 write</span>
+              <span class="spacer"></span>
+              <span><i class="swatch" style="background:var(--w-add);"></i> added</span>
+              <span><i class="swatch" style="background:var(--w-amber);"></i> modified</span>
+              <button class="btn" style="padding:2px 10px;font-size:11px;">Dismiss</button>
+            </div>
+
+            <!-- READ / DIFF pane -->
+            <div class="pane" id="paneRead" data-active="true">
+              <article class="reader">
+                <h1>Retrieval Evaluation — Run 41</h1>
+                <p class="subhead">Generated 14:22:07 · 1,840 words · 6 sections</p>
+
+                <p class="dblock">This run swapped the reranker from <code>bge-reranker-base</code> to
+                <code>bge-reranker-v2-m3</code> and widened the candidate pool from 20 to 50 documents.
+                Recall improved materially; latency did not degrade as much as the pilot suggested.</p>
+
+                <blockquote class="dblock" data-d="mod">The reranker change is safe to promote. The candidate-pool
+                widening is not — it pushes p99 past the 800 ms budget on the cold-cache path.</blockquote>
+
+                <h2>Headline numbers</h2>
+                <table>
+                  <thead><tr><th>Metric</th><th>Run 40</th><th>Run 41</th><th>Δ</th></tr></thead>
+                  <tbody>
+                    <tr><td>Recall@10</td><td>0.712</td><td>0.849</td><td>+19.2%</td></tr>
+                    <tr><td>MRR</td><td>0.601</td><td>0.688</td><td>+14.5%</td></tr>
+                    <tr><td>p50 latency</td><td>184 ms</td><td>203 ms</td><td>+10.3%</td></tr>
+                    <tr><td>p99 latency</td><td>602 ms</td><td>871 ms</td><td>+44.7%</td></tr>
+                  </tbody>
+                </table>
+
+                <h2 class="dblock" data-d="add">Where it still fails</h2>
+                <p class="dblock" data-d="add">Three failure classes survive the reranker upgrade. All three
+                share a root cause: the chunker splits tables mid-row, so the embedding never sees a
+                complete record.</p>
+                <ol class="dblock" data-d="add">
+                  <li><strong>Table fragmentation</strong> — 61% of remaining misses. Fix in the chunker, not the retriever.</li>
+                  <li><strong>Acronym collisions</strong> — 22%. Needs a domain glossary at query-expansion time.</li>
+                  <li><strong>Temporal drift</strong> — 17%. Documents lack effective-date metadata.</li>
+                </ol>
+
+                <h2>Reproducing this</h2>
+                <p>The harness is deterministic given a fixed seed and a pinned index snapshot:</p>
+<pre><code><span class="c"># pin the index, then run the sweep</span>
+<span class="f">uv run</span> eval/harness.py \
+  --index <span class="s">snapshots/2026-08-07.faiss</span> \
+  --reranker <span class="s">bge-reranker-v2-m3</span> \
+  --pool <span class="n">50</span> --seed <span class="n">41</span> \
+  --out <span class="s">out/eval-report.md</span></code></pre>
+
+                <p>Results land in <code>out/</code> as both Markdown and a standalone HTML dashboard.
+                The dashboard embeds its own chart data — no network calls, no build step.</p>
+
+                <hr>
+                <h2>Recommendation</h2>
+                <p>Ship the reranker. Hold the pool width at 20 until the chunker fix lands, then
+                re-measure — the p99 regression is almost certainly an artifact of fragmented tables
+                inflating the candidate set with near-duplicates.</p>
+              </article>
+            </div>
+
+            <!-- SOURCE pane -->
+            <div class="pane" id="paneSource">
+<div class="src"><span class="h"># Retrieval Evaluation — Run 41</span>
+
+This run swapped the reranker from `bge-reranker-base` to
+`bge-reranker-v2-m3` and widened the candidate pool from 20 to 50
+documents. Recall improved materially; latency did not degrade as
+much as the pilot suggested.
+
+<span class="fence">&gt;</span> The reranker change is safe to promote. The candidate-pool
+<span class="fence">&gt;</span> widening is not — it pushes p99 past the 800 ms budget on
+<span class="fence">&gt;</span> the cold-cache path.
+
+<span class="h">## Headline numbers</span>
+
+<span class="fence">| Metric       | Run 40 | Run 41 |      Δ |
+| ------------ | -----: | -----: | -----: |</span>
+<span class="fence">|</span> Recall@10    <span class="fence">|</span>  0.712 <span class="fence">|</span>  0.849 <span class="fence">|</span> +19.2% <span class="fence">|</span>
+<span class="fence">|</span> MRR          <span class="fence">|</span>  0.601 <span class="fence">|</span>  0.688 <span class="fence">|</span> +14.5% <span class="fence">|</span>
+<span class="fence">|</span> p50 latency  <span class="fence">|</span> 184 ms <span class="fence">|</span> 203 ms <span class="fence">|</span> +10.3% <span class="fence">|</span>
+<span class="fence">|</span> p99 latency  <span class="fence">|</span> 602 ms <span class="fence">|</span> 871 ms <span class="fence">|</span> +44.7% <span class="fence">|</span>
+
+<span class="ln">## Where it still fails</span>
+
+<span class="ln">Three failure classes survive the reranker upgrade. All three</span>
+<span class="ln">share a root cause: the chunker splits tables mid-row, so the</span>
+<span class="ln">embedding never sees a complete record.</span>
+
+<span class="ln">1. <span class="em">**Table fragmentation**</span> — 61% of remaining misses.</span>
+<span class="ln">2. <span class="em">**Acronym collisions**</span> — 22%. Needs a domain glossary.</span>
+<span class="ln">3. <span class="em">**Temporal drift**</span> — 17%. Missing effective-date metadata.</span>
+
+<span class="h">## Reproducing this</span>
+
+<span class="fence">```bash</span>
+uv run eval/harness.py \
+  --index snapshots/2026-08-07.faiss \
+  --reranker bge-reranker-v2-m3 \
+  --pool 50 --seed 41 \
+  --out out/eval-report.md
+<span class="fence">```</span></div>
+            </div>
+
+            <!-- HTML pane -->
+            <div class="pane htmldoc" id="paneHtml">
+              <div class="htmldoc-inner">
+                <h2 class="hd-title">Latency Dashboard — Run 41</h2>
+                <p class="hd-sub">Self-contained artifact · inline chart data · rendered with JavaScript sandboxed</p>
+
+                <div class="kpis">
+                  <div class="kpi"><div class="lab">p50</div><div class="val">203<small style="font-size:11px;font-weight:500;"> ms</small></div><div class="delta down">▲ 10.3%</div></div>
+                  <div class="kpi"><div class="lab">p95</div><div class="val">544<small style="font-size:11px;font-weight:500;"> ms</small></div><div class="delta down">▲ 21.0%</div></div>
+                  <div class="kpi"><div class="lab">p99</div><div class="val">871<small style="font-size:11px;font-weight:500;"> ms</small></div><div class="delta down">▲ 44.7%</div></div>
+                  <div class="kpi"><div class="lab">Recall@10</div><div class="val">0.849</div><div class="delta up">▲ 19.2%</div></div>
+                </div>
+
+                <div class="chartbox">
+                  <h4>Latency distribution · 10k queries</h4>
+                  <svg viewBox="0 0 640 190" style="width:100%;height:auto;display:block;" role="img" aria-label="Latency histogram comparing run 40 and run 41">
+                    <g stroke="currentColor" opacity=".14" stroke-width="1">
+                      <line x1="34" y1="8"   x2="632" y2="8"/>
+                      <line x1="34" y1="52"  x2="632" y2="52"/>
+                      <line x1="34" y1="96"  x2="632" y2="96"/>
+                      <line x1="34" y1="140" x2="632" y2="140"/>
+                    </g>
+                    <line x1="34" y1="158" x2="632" y2="158" stroke="currentColor" opacity=".3"/>
+                    <g font-size="9" fill="currentColor" opacity=".45" font-family="ui-monospace,monospace">
+                      <text x="4" y="12">900</text><text x="4" y="56">600</text>
+                      <text x="4" y="100">300</text><text x="4" y="144">0</text>
+                    </g>
+                    <g id="bars40"></g>
+                    <g id="bars41"></g>
+                    <g font-size="9" fill="currentColor" opacity=".55" font-family="var(--sans)">
+                      <rect x="470" y="4" width="9" height="9" rx="2" fill="#9aa3ad"/><text x="484" y="12">Run 40</text>
+                      <rect x="546" y="4" width="9" height="9" rx="2" fill="#2f6272"/><text x="560" y="12">Run 41</text>
+                    </g>
+                    <g font-size="8.5" fill="currentColor" opacity=".45" font-family="ui-monospace,monospace" text-anchor="middle">
+                      <text x="90" y="172">p10</text><text x="190" y="172">p25</text><text x="290" y="172">p50</text>
+                      <text x="390" y="172">p75</text><text x="490" y="172">p95</text><text x="590" y="172">p99</text>
+                    </g>
+                  </svg>
+                </div>
+
+                <p style="font-size:12px;color:var(--w-faint);margin:14px 0 0;line-height:1.55;">
+                  This artifact tried to load two remote resources (a font CDN and an analytics
+                  beacon). Both were blocked before the request left the machine. Click the toolbar
+                  badge to allow them for this document only.
+                </p>
+              </div>
+            </div>
+
+            <!-- export sheet -->
+            <div class="sheetwrap" id="sheet">
+              <div class="sheetscrim" id="scrim"></div>
+              <div class="sheet" role="dialog" aria-label="Export PDF">
+                <h3>Export PDF</h3>
+                <p class="sh-sub">eval-report.md · 6 pages at Letter · fonts embedded and subset</p>
+
+                <div class="themegrid">
+                  <button class="tcard" aria-pressed="true">
+                    <div class="tprev" style="font-family:var(--serif);">
+                      <div class="ph" style="font-size:8.5px;">Retrieval Evaluation</div>
+                      <div class="pl m"></div><div class="pl"></div><div class="pl m"></div><div class="pl s"></div>
+                    </div>
+                    <span class="tname">Manuscript<span class="tface">iA Writer Quattro</span></span>
+                  </button>
+                  <button class="tcard" aria-pressed="false">
+                    <div class="tprev" style="font-family:var(--sans);">
+                      <div class="ph">RETRIEVAL EVALUATION</div>
+                      <div class="pl m"></div><div class="pl"></div><div class="pl m"></div><div class="pl s"></div>
+                    </div>
+                    <span class="tname">Report<span class="tface">IBM Plex Sans</span></span>
+                  </button>
+                  <button class="tcard" aria-pressed="false">
+                    <div class="tprev" style="font-family:var(--mono);">
+                      <div class="ph" style="font-size:7px;">retrieval_eval_41</div>
+                      <div class="pl m"></div><div class="pl"></div><div class="pl s"></div><div class="pl m"></div>
+                    </div>
+                    <span class="tname">Technical<span class="tface">JetBrains Mono</span></span>
+                  </button>
+                  <button class="tcard" aria-pressed="false">
+                    <div class="tprev" style="font-family:Palatino,serif;">
+                      <div class="ph" style="font-size:9px;font-style:italic;font-weight:400;">Retrieval Evaluation</div>
+                      <div class="pl m"></div><div class="pl"></div><div class="pl m"></div><div class="pl s"></div>
+                    </div>
+                    <span class="tname">Editorial<span class="tface">Charter</span></span>
+                  </button>
+                </div>
+
+                <div class="sheet-row">
+                  <span class="selectish">Letter · 1″ margins</span>
+                  <span class="selectish">·</span>
+                  <span class="selectish">Header: filename + date</span>
+                  <span class="spacer"></span>
+                  <button class="btn" id="cancelSheet">Cancel</button>
+                  <button class="btn btn--p">Save…</button>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /canvas -->
+        </div><!-- /wbody -->
+      </div><!-- /win -->
+
+      <!-- control rail -->
+      <div class="rail">
+        <div class="rail-grp">
+          <span class="rl">Document</span>
+          <button class="pill" id="dMd" aria-pressed="true">eval-report.md</button>
+          <button class="pill" id="dHtml" aria-pressed="false">dashboard.html</button>
+        </div>
+        <div class="rail-grp">
+          <span class="rl">Reading face</span>
+          <button class="pill" data-rt="serif" aria-pressed="true">Serif</button>
+          <button class="pill" data-rt="quattro" aria-pressed="false">Quattro</button>
+          <button class="pill" data-rt="sans" aria-pressed="false">Sans</button>
+          <button class="pill" data-rt="mono" aria-pressed="false">Mono</button>
+        </div>
+        <div class="rail-grp">
+          <span class="rl">Appearance</span>
+          <button class="pill" id="appLight" aria-pressed="true">Light</button>
+          <button class="pill" id="appDark" aria-pressed="false">Dark</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ANATOMY ================= -->
+  <section class="sec">
+    <div class="sec-head"><h2>Why these controls</h2><span class="tag">Toolbar rationale</span></div>
+    <p class="sec-note">
+      You asked for “copy whole content” and “send to another app,” and for me to propose the rest.
+      Every item earns its place against one test: does it shorten the loop between an agent writing
+      a file and you doing something with it?
+    </p>
+    <div class="cards">
+      <div class="card">
+        <h4><span class="num">1</span>Copy, four ways</h4>
+        <p>One button, four payloads on the clipboard at once. Paste into a terminal and you get
+        Markdown source; paste into Slack or Mail and you get formatted rich text. The system picks
+        the right representation — you never choose wrong.</p>
+      </div>
+      <div class="card">
+        <h4><span class="num">2</span>Send to…</h4>
+        <p>A real <span class="kbdi">Open With</span> list built from the apps actually installed on
+        your machine, plus pinned targets. “Obsidian — Research vault” writes the file into the vault
+        folder and then opens it, which sidesteps the URL-length limits that make
+        <span class="kbdi">obsidian://</span> links break on long documents.</p>
+      </div>
+      <div class="card">
+        <h4><span class="num">3</span>Diff since last write</h4>
+        <p>The feature nothing else has. The app is already watching the file, so it keeps the
+        previous version in memory. When an agent rewrites the document, changed blocks light up in
+        the rendered view — you read the delta, not the whole thing again.</p>
+      </div>
+      <div class="card">
+        <h4><span class="num">4</span>Live badge</h4>
+        <p>Green means the file on disk is being watched and the view is current. When a write lands,
+        the view refreshes and holds your scroll position instead of throwing you back to the top.</p>
+      </div>
+      <div class="card">
+        <h4><span class="num">5</span>Blocked-request badge</h4>
+        <p>Agent-written HTML gets rendered with the network switched off at the WebKit layer. The
+        badge counts what was stopped and lets you allow it for that one document if you actually
+        want the remote font or the live chart.</p>
+      </div>
+      <div class="card">
+        <h4><span class="num">6</span>Typography popover</h4>
+        <p>Face, size, line measure, and light/dark. Same stylesheet drives the screen and the PDF,
+        so what you tune here is what you export.</p>
+      </div>
+      <div class="card">
+        <h4><span class="num">7</span>Side tabs, hidden</h4>
+        <p><span class="kbdi">⌘⇧E</span> or a nudge at the left edge. Point it at a folder and it
+        becomes a live list of every artifact in it, newest first, with a dot on anything written
+        since you last looked.</p>
+      </div>
+      <div class="card">
+        <h4><span class="num">8</span>Outline &amp; find</h4>
+        <p><span class="kbdi">⌘F</span> in-page find and a heading jump-list for long reports. Both
+        live in the sidebar rather than the toolbar, so the chrome stays at eight items.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PDF THEMES ================= -->
+  <section class="sec">
+    <div class="sec-head"><h2>PDF themes</h2><span class="tag">Six shipped, all extensible</span></div>
+    <p class="sec-note">
+      A theme is a folder — a manifest, a screen stylesheet, and a print stylesheet. That means the
+      reading view and the exported PDF are the same rendering path, and adding a theme requires no
+      code. Licensing is settled: the iA Writer families and IBM Plex are OFL 1.1 and can be bundled
+      outright; Charter, Palatino and SF Mono already ship with macOS, so they cost nothing.
+    </p>
+    <div class="gallery">
+
+      <div class="gcard">
+        <div class="page page--manuscript">
+          <p class="pm">Run 41 · 07 Aug 2026</p>
+          <p class="pt">Retrieval Evaluation</p>
+          <div class="prule"></div>
+          <p class="pp">This run swapped the reranker and widened the candidate pool from twenty to fifty documents. Recall improved materially; latency did not degrade as much as the pilot suggested.</p>
+          <p class="ph2">Headline numbers</p>
+          <p class="pp">Recall@10 rose to 0.849 against a baseline of 0.712, while p99 latency moved from 602 ms to 871 ms — past the stated budget.</p>
+          <div class="pcode">uv run eval/harness.py --seed 41</div>
+          <p class="pp">Three failure classes survive the upgrade, all sharing a chunker root cause.</p>
+        </div>
+        <div class="gmeta">
+          <p class="gname">Manuscript</p>
+          <p class="gface">iA Writer Quattro</p>
+          <p class="guse">Long prose reports. Generous leading, 66-character measure, hanging bullets.</p>
+          <span class="lic">OFL — bundled</span>
+        </div>
+      </div>
+
+      <div class="gcard">
+        <div class="page page--report">
+          <p class="pm">Evaluation · Run 41</p>
+          <p class="pt">Retrieval Evaluation</p>
+          <div class="prule"></div>
+          <p class="pp">This run swapped the reranker and widened the candidate pool from twenty to fifty documents. Recall improved materially; latency did not degrade as much as the pilot suggested.</p>
+          <p class="ph2">Headline numbers</p>
+          <p class="pp">Recall@10 rose to 0.849 against a baseline of 0.712, while p99 latency moved from 602 ms to 871 ms — past the stated budget.</p>
+          <div class="pcode">uv run eval/harness.py --seed 41</div>
+          <p class="pp">Three failure classes survive the upgrade, all sharing a chunker root cause.</p>
+        </div>
+        <div class="gmeta">
+          <p class="gname">Report</p>
+          <p class="gface">IBM Plex Sans</p>
+          <p class="guse">Sharing outward. Tight hierarchy, ruled tables, running header with filename and date.</p>
+          <span class="lic">OFL — bundled</span>
+        </div>
+      </div>
+
+      <div class="gcard">
+        <div class="page page--technical">
+          <p class="pm">out/eval-report.md</p>
+          <p class="pt">Retrieval Evaluation</p>
+          <div class="prule"></div>
+          <p class="pp">This run swapped the reranker and widened the candidate pool from twenty to fifty documents. Recall improved materially; latency did not degrade as much as the pilot suggested.</p>
+          <p class="ph2">headline_numbers</p>
+          <p class="pp">Recall@10 rose to 0.849 against a baseline of 0.712, while p99 latency moved from 602 ms to 871 ms — past the stated budget.</p>
+          <div class="pcode">uv run eval/harness.py --seed 41</div>
+          <p class="pp">Three failure classes survive the upgrade, all sharing a chunker root cause.</p>
+        </div>
+        <div class="gmeta">
+          <p class="gname">Technical</p>
+          <p class="gface">IBM Plex Sans + JetBrains Mono</p>
+          <p class="guse">Code-heavy artifacts. Wide code gutter, no wrapping mid-token, line numbers optional.</p>
+          <span class="lic">OFL — bundled</span>
+        </div>
+      </div>
+
+      <div class="gcard">
+        <div class="page page--editorial">
+          <p class="pm">Seven August, Two Thousand Twenty-Six</p>
+          <p class="pt">Retrieval Evaluation</p>
+          <div class="prule"></div>
+          <p class="pp">This run swapped the reranker and widened the candidate pool from twenty to fifty documents. Recall improved materially; latency did not degrade as much as the pilot suggested.</p>
+          <p class="ph2">Headline numbers</p>
+          <p class="pp">Recall@10 rose to 0.849 against a baseline of 0.712, while p99 latency moved from 602 ms to 871 ms.</p>
+          <p class="pp">Three failure classes survive the upgrade, all sharing a chunker root cause.</p>
+        </div>
+        <div class="gmeta">
+          <p class="gname">Editorial</p>
+          <p class="gface">Charter</p>
+          <p class="guse">Reading at length on paper. Wide margins, italic metadata, optical first-line indents.</p>
+          <span class="lic lic--sys">macOS system font</span>
+        </div>
+      </div>
+
+      <div class="gcard">
+        <div class="page page--compact">
+          <p class="pm">Run 41</p>
+          <p class="pt">Retrieval Evaluation</p>
+          <div class="prule"></div>
+          <p class="pp">This run swapped the reranker and widened the candidate pool from twenty to fifty documents. Recall improved materially; latency did not degrade as much as the pilot suggested. The reranker change is safe to promote.</p>
+          <p class="ph2">Headline numbers</p>
+          <p class="pp">Recall@10 rose to 0.849 against a baseline of 0.712, while p99 latency moved from 602 ms to 871 ms — past the stated budget of 800 ms on the cold-cache path.</p>
+          <div class="pcode">uv run eval/harness.py --seed 41</div>
+          <p class="pp">Three failure classes survive the upgrade: table fragmentation at 61%, acronym collisions at 22%, temporal drift at 17%. All three share a chunker root cause.</p>
+          <p class="ph2">Recommendation</p>
+          <p class="pp">Ship the reranker, hold the pool width, re-measure after the chunker fix.</p>
+        </div>
+        <div class="gmeta">
+          <p class="gname">Compact</p>
+          <p class="gface">SF Pro Text</p>
+          <p class="guse">Long agent dumps you need on two pages instead of nine. Denser leading, smaller type.</p>
+          <span class="lic lic--sys">macOS system font</span>
+        </div>
+      </div>
+
+      <div class="gcard">
+        <div class="page page--terminal">
+          <p class="pm">out/eval-report.md</p>
+          <p class="pt">retrieval-eval-41</p>
+          <div class="prule"></div>
+          <p class="pp">This run swapped the reranker and widened the candidate pool from twenty to fifty documents. Recall improved materially; latency did not degrade as much as the pilot suggested.</p>
+          <p class="ph2">## headline numbers</p>
+          <p class="pp">Recall@10 rose to 0.849 against a baseline of 0.712, while p99 latency moved from 602 ms to 871 ms.</p>
+          <div class="pcode">$ uv run eval/harness.py --seed 41</div>
+          <p class="pp">Three failure classes survive the upgrade, all sharing a chunker root cause.</p>
+        </div>
+        <div class="gmeta">
+          <p class="gname">Terminal</p>
+          <p class="gface">JetBrains Mono</p>
+          <p class="guse">Dark, monospaced, for logs and traces. Prints legibly rather than flooding the toner.</p>
+          <span class="lic">OFL — bundled</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <p class="foot">
+    <b>What this study is not.</b> These are static mock-ups built in a browser, not screenshots of a
+    running app — the real thing renders through WebKit inside an AppKit window, and the reading faces
+    here fall back to whatever your system has. The interaction model, control set, and typographic
+    direction are the parts up for review. Timings, launch budget, and the architecture behind all of
+    this are in the companion technical proposal.
+  </p>
+
+</div>
+
+<script>
+  (function () {
+    var win     = document.getElementById('win');
+    var canvas  = document.getElementById('canvas');
+    var sheet   = document.getElementById('sheet');
+    var menu    = document.getElementById('sendMenu');
+
+    /* ---- sidebar ---- */
+    var sideToggle = document.getElementById('sideToggle');
+    sideToggle.addEventListener('click', function () {
+      var hidden = win.getAttribute('data-sidebar') === 'hidden';
+      win.setAttribute('data-sidebar', hidden ? 'shown' : 'hidden');
+      sideToggle.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+    });
+
+    /* ---- view mode ---- */
+    var modes = {
+      read:   document.getElementById('mRead'),
+      source: document.getElementById('mSource'),
+      diff:   document.getElementById('mDiff')
+    };
+    var paneRead   = document.getElementById('paneRead');
+    var paneSource = document.getElementById('paneSource');
+    var paneHtml   = document.getElementById('paneHtml');
+    var currentDoc = 'md';
+    var currentMode = 'read';
+
+    function paint() {
+      Object.keys(modes).forEach(function (k) {
+        modes[k].setAttribute('aria-pressed', k === currentMode ? 'true' : 'false');
+      });
+      var showHtml = currentDoc === 'html' && currentMode === 'read';
+      paneHtml.setAttribute('data-active', showHtml ? 'true' : 'false');
+      paneRead.setAttribute('data-active', (!showHtml && currentMode !== 'source') ? 'true' : 'false');
+      paneSource.setAttribute('data-active', currentMode === 'source' ? 'true' : 'false');
+      canvas.setAttribute('data-diff', currentMode === 'diff' ? 'on' : 'off');
+      canvas.scrollTop = 0;
+    }
+    Object.keys(modes).forEach(function (k) {
+      modes[k].addEventListener('click', function () { currentMode = k; paint(); });
+    });
+
+    /* ---- document switch ---- */
+    var dMd = document.getElementById('dMd');
+    var dHtml = document.getElementById('dHtml');
+    var docName = document.getElementById('docName');
+    var liveChip = document.getElementById('liveChip');
+    var blockChip = document.getElementById('blockChip');
+
+    function setDoc(which) {
+      currentDoc = which;
+      dMd.setAttribute('aria-pressed', which === 'md' ? 'true' : 'false');
+      dHtml.setAttribute('aria-pressed', which === 'html' ? 'true' : 'false');
+      docName.textContent = which === 'md' ? 'eval-report.md' : 'latency-dashboard.html';
+      liveChip.style.display  = which === 'md' ? '' : 'none';
+      blockChip.style.display = which === 'md' ? 'none' : '';
+      modes.diff.style.display = which === 'md' ? '' : 'none';
+      if (which === 'html' && currentMode === 'diff') currentMode = 'read';
+      paint();
+    }
+    dMd.addEventListener('click', function () { setDoc('md'); });
+    dHtml.addEventListener('click', function () { setDoc('html'); });
+
+    /* ---- reading theme ---- */
+    var rtBtns = document.querySelectorAll('[data-rt]');
+    rtBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        rtBtns.forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+        b.setAttribute('aria-pressed', 'true');
+        canvas.setAttribute('data-rtheme', b.getAttribute('data-rt'));
+      });
+    });
+
+    /* ---- appearance ---- */
+    var aL = document.getElementById('appLight');
+    var aD = document.getElementById('appDark');
+    function setApp(mode) {
+      win.setAttribute('data-appearance', mode);
+      aL.setAttribute('aria-pressed', mode === 'light' ? 'true' : 'false');
+      aD.setAttribute('aria-pressed', mode === 'dark' ? 'true' : 'false');
+    }
+    aL.addEventListener('click', function () { setApp('light'); });
+    aD.addEventListener('click', function () { setApp('dark'); });
+
+    /* start the window matching the page */
+    var pref = document.documentElement.getAttribute('data-theme');
+    var dark = pref === 'dark' ||
+      (!pref && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    setApp(dark ? 'dark' : 'light');
+
+    /* ---- export sheet ---- */
+    function openSheet(o) { sheet.setAttribute('data-open', o ? 'true' : 'false'); }
+    document.getElementById('pdfBtn').addEventListener('click', function () { openSheet(true); });
+    document.getElementById('cancelSheet').addEventListener('click', function () { openSheet(false); });
+    document.getElementById('scrim').addEventListener('click', function () { openSheet(false); });
+
+    var tcards = document.querySelectorAll('.tcard');
+    tcards.forEach(function (c) {
+      c.addEventListener('click', function () {
+        tcards.forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+        c.setAttribute('aria-pressed', 'true');
+      });
+    });
+
+    /* ---- send menu ---- */
+    var sendBtn = document.getElementById('sendBtn');
+    sendBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      menu.setAttribute('data-open', menu.getAttribute('data-open') === 'true' ? 'false' : 'true');
+    });
+    document.addEventListener('click', function () { menu.setAttribute('data-open', 'false'); });
+    menu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { menu.setAttribute('data-open', 'false'); openSheet(false); }
+    });
+
+    /* ---- copy button feedback ---- */
+    var copyBtn = document.getElementById('copyBtn');
+    var copyLbl = copyBtn.querySelector('.lbl');
+    copyBtn.addEventListener('click', function () {
+      copyLbl.textContent = 'Copied';
+      setTimeout(function () { copyLbl.textContent = 'Copy'; }, 1300);
+    });
+
+    /* ---- sidebar tab selection ---- */
+    var tabs = document.querySelectorAll('.tabitem');
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        tabs.forEach(function (o) { o.setAttribute('aria-current', 'false'); });
+        t.setAttribute('aria-current', 'true');
+        var nm = t.querySelector('.nm').textContent;
+        setDoc(nm.indexOf('.html') > -1 ? 'html' : 'md');
+        docName.textContent = nm;
+        var mk = t.querySelector('.mark');
+        if (mk) mk.remove();
+      });
+    });
+
+    /* ---- histogram bars ---- */
+    var d40 = [42, 68, 96, 148, 232, 602];
+    var d41 = [46, 74, 108, 166, 288, 871];
+    var g40 = document.getElementById('bars40');
+    var g41 = document.getElementById('bars41');
+    var scale = 150 / 900;
+    for (var i = 0; i < 6; i++) {
+      var x = 60 + i * 100;
+      var h40 = Math.max(2, d40[i] * scale);
+      var h41 = Math.max(2, d41[i] * scale);
+      var r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      r1.setAttribute('x', x); r1.setAttribute('y', 158 - h40);
+      r1.setAttribute('width', 26); r1.setAttribute('height', h40);
+      r1.setAttribute('rx', 2.5); r1.setAttribute('fill', '#9aa3ad');
+      g40.appendChild(r1);
+      var r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      r2.setAttribute('x', x + 28); r2.setAttribute('y', 158 - h41);
+      r2.setAttribute('width', 26); r2.setAttribute('height', h41);
+      r2.setAttribute('rx', 2.5); r2.setAttribute('fill', '#2f6272');
+      g41.appendChild(r2);
+    }
+
+    setDoc('md');
+  })();
+</script>
