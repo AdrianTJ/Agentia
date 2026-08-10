@@ -1,0 +1,19 @@
+# Build products
+.build/
+.build-cache/
+DerivedData/
+*.o
+*.a
+*.dSYM/
+
+# Test output
+tools/webtest/node_modules/
+tools/webtest/output/
+tools/webtest/test-results/
+
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate

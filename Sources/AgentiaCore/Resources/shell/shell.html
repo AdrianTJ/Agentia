@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="{{APPEARANCE}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="{{CSP}}">
+<title>{{TITLE}}</title>
+<style>{{BASE_CSS}}</style>
+<style>{{THEME_CSS}}</style>
+</head>
+<body>
+<!--
+  Bootstrap data is a JSON block, not interpolated JavaScript. shell.js is
+  byte-identical on every render, so its CSP hash is fixed at build time and
+  nothing document-derived can reach the script-src allowlist.
+-->
+<script type="application/json" id="agentia-bootstrap">{{BOOTSTRAP_JSON}}</script>
+<main id="agentia-doc" class="doc">{{CONTENT}}</main>
+<script>{{SHELL_JS}}</script>
+</body>
+</html>

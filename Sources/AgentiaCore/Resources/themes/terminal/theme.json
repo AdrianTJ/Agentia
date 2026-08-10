@@ -1,0 +1,19 @@
+{
+  "id": "terminal",
+  "name": "Terminal",
+  "order": 6,
+  "description": "Logs and traces. Monospaced throughout, dark on screen, legible on paper.",
+  "prefersDarkAppearance": true,
+  "fonts": {
+    "body": "\"JetBrains Mono\", \"SF Mono\", Menlo, ui-monospace, monospace",
+    "heading": "\"JetBrains Mono\", \"SF Mono\", Menlo, ui-monospace, monospace",
+    "mono": "\"JetBrains Mono\", \"SF Mono\", Menlo, ui-monospace, monospace"
+  },
+  "requiredFonts": [
+    "JetBrains Mono"
+  ],
+  "page": {
+    "size": "Letter",
+    "margin": "0.7in"
+  }
+}

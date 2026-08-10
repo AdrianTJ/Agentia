@@ -1,0 +1,20 @@
+{
+  "id": "technical",
+  "name": "Technical",
+  "order": 3,
+  "description": "Code-heavy artifacts. Wider measure so listings breathe, mono-set headings.",
+  "prefersDarkAppearance": false,
+  "fonts": {
+    "body": "\"IBM Plex Sans\", -apple-system, \"SF Pro Text\", system-ui, sans-serif",
+    "heading": "\"JetBrains Mono\", \"IBM Plex Mono\", \"SF Mono\", Menlo, ui-monospace, monospace",
+    "mono": "\"JetBrains Mono\", \"IBM Plex Mono\", \"SF Mono\", Menlo, ui-monospace, monospace"
+  },
+  "requiredFonts": [
+    "IBM Plex Sans",
+    "JetBrains Mono"
+  ],
+  "page": {
+    "size": "Letter",
+    "margin": "0.75in"
+  }
+}

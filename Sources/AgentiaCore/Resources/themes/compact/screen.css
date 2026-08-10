@@ -1,0 +1,26 @@
+/* Compact — Long agent dumps on two pages instead of nine. Dense but still legible.
+   Fonts degrade to system faces when the optional families are absent. */
+
+:root {
+  --measure: 80ch;
+  --size-body: 14.5px;
+  --leading: 1.5;
+  --accent: #4a4f8c;
+  --pad-top: 34px;
+  --size-code: 0.86em;
+  --font-body: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-head: -apple-system, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", Menlo, ui-monospace, monospace;
+}
+
+html[data-appearance="dark"] {
+  --accent: #9aa0e0;
+}
+
+.doc h1 { font-size: 1.42em; margin-bottom: .35em; }
+.doc h2 { font-size: 1.14em; margin: 1.35em 0 .35em; }
+.doc p, .doc ul, .doc ol { margin-bottom: .72em; }
+.doc li { margin-bottom: .18em; }
+.doc pre { padding: 9px 11px; margin: .85em 0; font-size: 12px; }
+.doc table { margin: .9em 0; font-size: .82em; }
+.doc td, .doc th { padding: 5px 8px; }

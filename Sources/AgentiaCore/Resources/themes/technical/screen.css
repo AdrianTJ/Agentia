@@ -1,0 +1,21 @@
+/* Technical — Code-heavy artifacts. Wider measure so listings breathe, mono-set headings.
+   Fonts degrade to system faces when the optional families are absent. */
+
+:root {
+  --measure: 78ch;
+  --size-body: 15.5px;
+  --leading: 1.6;
+  --accent: #3a6b4a;
+  --font-body: "IBM Plex Sans", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-head: "JetBrains Mono", "IBM Plex Mono", "SF Mono", Menlo, ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", "SF Mono", Menlo, ui-monospace, monospace;
+}
+
+html[data-appearance="dark"] {
+  --accent: #74b98d;
+}
+
+.doc h1, .doc h2, .doc h3 { letter-spacing: -.02em; font-weight: 700; }
+.doc h2::before { content: "## "; color: var(--fg-faint); font-weight: 400; }
+.doc h3::before { content: "### "; color: var(--fg-faint); font-weight: 400; }
+.doc pre { font-size: 12.5px; }

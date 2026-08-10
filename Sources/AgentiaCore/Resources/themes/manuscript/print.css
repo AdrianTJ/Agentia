@@ -1,0 +1,14 @@
+/* Manuscript — print. @page controls sheet geometry; running heads
+   come from the host print pipeline, since no shipping browser
+   engine implements CSS @page margin boxes. */
+
+@page {
+  size: Letter;
+  margin: 1in;
+}
+
+@media print {
+  :root { --size-body: 11pt; }
+  :root { --leading: 1.55; }
+  :root { --measure: none; }
+}

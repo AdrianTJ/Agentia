@@ -7,99 +7,200 @@ Not a note-taker (Obsidian owns that). Not an IDE (VS Code owns that). A place t
 generated file, read it, see what changed since the last run, export it well, and push it
 somewhere useful.
 
-**Status:** design phase. No implementation yet — Phase 0 is a measurement spike, see below.
-
 ---
 
-## The proposal in one paragraph
+## Architecture
 
 Parse Markdown with **cmark-gfm in Swift**, emit HTML, and render everything — Markdown and
-HTML alike — through a **single WKWebView** inside a plain AppKit window. Ship unsandboxed
-under Developer ID with Sparkle updates. Read-only rendering with a source toggle for v1;
-no Typora-style live preview.
+HTML alike — through a **single WKWebView** in a plain AppKit window.
 
 The case rests on one observation: **you need a web view anyway.** Nothing else on macOS
 renders arbitrary agent-written HTML. Once WebKit is on the critical path for half your file
-types, adding a native Markdown renderer beside it buys nothing and costs you two theme
-systems, two PDF paths, and two sets of bugs.
+types, adding a native Markdown renderer beside it buys nothing and costs two theme systems,
+two PDF paths, and two sets of bugs.
+
+One refinement over the libraries in the wild: **parse in Swift, not in the page.** The
+popular WKWebView Markdown views ship `markdown-it` inside the HTML, which forces JavaScript
+to stay on. Parsing in-process means the web view receives finished HTML and Markdown can
+render with scripting pinned to a single hash.
+
+```
+file.md ──► cmark-gfm (C, in-process) ──► HTML ──┐
+                                                  ├──► WKWebView ──► screen
+file.html ───────────────── as-is ───────────────┘        │           └──► PDF
+                                                     network blocked
+```
+
+| Layer | Path | What it does |
+| --- | --- | --- |
+| C shim | `Sources/CAgentiaMarkdown/` | cmark-gfm behind three functions; GFM extensions, footnotes, source positions |
+| Core | `Sources/AgentiaCore/` | Page assembly, themes, diff engine, asset-path validation. Foundation only |
+| App | `Sources/Agentia/` | AppKit shell, hardened web view, `artifact://` handler, FSEvents watcher, PDF export |
+| Shell | `Sources/AgentiaCore/Resources/` | HTML template, base CSS, pinned script, six themes |
+
+## Security model
+
+Agent-written HTML is code nobody reviewed. Containment is **three independent mechanisms**,
+because any one of them can be wrong:
+
+1. **Page CSP.** `shell.js` is byte-stable, so its SHA-256 is fixed and pinned into
+   `script-src`. All variable data arrives as a JSON block, which cannot extend the allowlist.
+   Both profiles set `connect-src 'none'` and name no remote origin.
+2. **Content rule list.** A compiled `WKContentRuleList` blocks every non-`artifact:` load
+   inside WebKit, before a request is issued, and reports the count to the toolbar.
+3. **Navigation delegate.** The only permitted navigation is the document's own load. A
+   document cannot replace itself with something else.
+
+Two profiles differ *only* in scripting:
+
+| | Markdown | HTML artifact |
+| --- | --- | --- |
+| Document's own JS | cannot run | runs |
+| Network | none | none, with a per-document override |
+| Storage | non-persistent | non-persistent |
+
+The parser is **not** a sanitiser, and the tests pin that: `tagfilter` escapes `<script>` and
+`<iframe>`, but `onerror=` passes straight through. The CSP is load-bearing, not a second
+layer.
+
+## Building and testing
+
+Two of the three layers are testable **without a Mac**, which is how they were developed:
+
+```bash
+./tools/build-ctest.sh                # C parsing core — 102 checks, clang only
+node tools/webtest/run-tests.mjs      # render shell in real Chromium — 147 checks
+python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
+```
+
+On macOS:
+
+```bash
+swift test                          # AgentiaCore
+tools/make-app.sh                   # builds .build/Agentia.app
+```
+
+### What is verified, and what is not
+
+Being honest about this matters more than looking finished.
+
+| Layer | Status |
+| --- | --- |
+| C parsing core | **Tested.** 102 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
+| Render shell, themes, print CSS | **Tested in a real browser.** 147 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
+| Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors |
+| AgentiaCore Swift | **Written, not yet compiled.** Full XCTest suite ships; needs `swift test` on a Mac |
+| macOS app layer | **Written, not yet compiled.** Needs the macOS SDK |
+
+The Swift layers were written on Linux with no Swift toolchain available
+(`download.swift.org` is unreachable from the build environment). To keep them honest anyway:
+
+- `tools/gen-golden.mjs` emits the values `AgentiaCore` and `build-page.mjs` must agree on
+  byte for byte. Expectations are **computed by running the JS implementation**, never written
+  by hand, so a golden value cannot itself be wrong.
+- `tools/verify-diff-vectors.py` is a transcription of `DiffEngine` that executes here and
+  generates the vectors the Swift tests assert.
+
+Expect first `swift build` on a Mac to surface compile errors. That is the known cost of the
+environment, not a design assumption.
+
+## Things the testing actually caught
+
+- **A real bug in `swiftlang/swift-cmark`.** Its gfm branch emits an unterminated attribute on
+  the footnote backref — `aria-label="Back to reference 1↩</a>` with no closing `">`. An
+  unterminated attribute swallows the rest of the document, so a **single footnote corrupts
+  the entire page**, including the shell script. Upstream `github/cmark-gfm` is correct; the
+  defect is specific to Apple's fork. `CAgentiaMarkdown` repairs it, with tests pinning both
+  the repair and the correct multi-backref path it must not touch. It becomes a no-op if the
+  dependency is fixed.
+- **Code blocks squeezing instead of scrolling.** Tables inside a scroll container inherited
+  `width: 100%` and wrapped every cell rather than overflowing, so the container never
+  actually scrolled.
+- **A case-preservation bug** in the Swift `</script` neutralisation, found by building the
+  parity harness rather than by reading the code.
+
+A review pass and a dogfooding pass then found more, including three defects that would
+each have stopped the app on first run (the resource bundle in a directory `Bundle.module`
+never searches; a weak app delegate held only by a local; an empty state that overwrote
+every Finder-opened document), a message-bridge hole that let an HTML artifact exfiltrate
+document text with one line of script, wide tables losing 18 of 28 columns in the PDF, and a
+200 KB file that could wedge the renderer indefinitely.
+
+## Measured
+
+On an x86 vCPU with cmark-gfm 0.29.0.gfm.13:
+
+| Input | Parse |
+| --- | --- |
+| 10 KB | 0.46 ms |
+| 50 KB | 1.8 ms |
+| 200 KB | 7.5 ms |
+
+Source positions roughly double parse cost, which is still negligible at artifact scale, so
+they stay on for the diff view. No quadratic blowup on unclosed-bracket, backtick or
+angle-bracket bombs at 50k characters.
+
+**The number that still does not exist** is cold launch to first paint from a Finder
+double-click on Apple Silicon. No public source establishes it, so `AppDelegate` carries
+`os_signpost` markers and `tools/make-app.sh` prints the commands to measure it:
+
+```bash
+log stream --predicate 'subsystem == "app.agentia"' --style compact &
+open -a .build/Agentia.app report.md
+```
+
+| Result | Response |
+| --- | --- |
+| under ~250 ms | Proceed as designed |
+| 250–450 ms | Proceed; trim frameworks and defer non-essential init |
+| over ~450 ms | Ship a Quick Look extension for the instant peek; the app becomes the deliberate open |
+
+## Picking this up
+
+If you are continuing this work — especially on a Mac, where the Swift can finally be
+compiled — start with [`HANDOFF.md`](HANDOFF.md). It covers the compile errors to expect
+first, the invariants that must not be broken, and the task order.
 
 ## Design documents
 
 | Document | What's in it |
 | --- | --- |
-| [`docs/interface-study.html`](docs/interface-study.html) | Interactive window mock — side tabs, reading themes, diff view, PDF theme gallery, toolbar rationale |
-| [`docs/technical-proposal.html`](docs/technical-proposal.html) | Architecture decision, security model, launch budget, phased build plan, risk register |
+| [`docs/interface-study.html`](docs/interface-study.html) | Interactive window mock — side tabs, reading themes, diff view, PDF theme gallery |
+| [`docs/technical-proposal.html`](docs/technical-proposal.html) | Architecture decision, security model, launch budget, phased plan, risk register |
 
-Both are self-contained HTML — open them in a browser.
+## Themes
 
-## Feature set
+Six ship. A theme is a folder — `theme.json`, `screen.css`, `print.css` — so adding one needs
+no code, and the reading view and the PDF are the same rendering path.
 
-1. **Clean reading view by default.** Rendered Markdown at a proper measure, several
-   typographic themes, light and dark.
-2. **Markdown and HTML in one window.** HTML artifacts render with the network cut at the
-   WebKit layer; the toolbar reports what was blocked.
-3. **Side tabs, hidden by default.** `⌘⇧E` reveals them. Point the app at a folder and it
-   becomes a live list of artifacts, newest first.
-4. **Diff since last write.** The app already watches the file, so it keeps the previous
-   version and highlights changed blocks when an agent regenerates the document. This is the
-   feature nothing else has.
-5. **PDF export with real typography.** Themes are folders — a manifest, a screen stylesheet
-   and a print stylesheet — so the reading view and the PDF are the same rendering path.
-6. **Copy and send.** Multi-representation clipboard, a real Open With list, and a pinned
-   Obsidian vault target that writes the file rather than stuffing it through a URL scheme.
+Manuscript · Report · Technical · Editorial · Compact · Terminal
 
-## What the research established
+Font stacks degrade to system faces when the optional OFL families are absent. The iA Writer
+families and IBM Plex are OFL 1.1 and can be bundled outright; Charter, Palatino and SF Mono
+already ship with macOS. Running heads come from `NSPrintInfo`, not CSS — no shipping browser
+engine implements CSS `@page` margin boxes.
 
-105 research agents, 23 sources, 25 claims adversarially verified — 14 confirmed, 11 killed.
+## Known issues
 
-**Confirmed**
+Found by dogfooding and not yet fixed. Recorded rather than quietly dropped.
 
-- Every shipping macOS Markdown previewer uses a C parser feeding a web view (MacDown,
-  QLMarkdown), verified by reading source rather than READMEs.
-- Markdown parsing is not a bottleneck: cmark runs 20–26 ms/MB, so a 50 KB artifact parses in
-  under a millisecond. Latency lives in launch and layout, never the parser.
-- The native-SwiftUI route has no stable landing place — MarkdownUI is in maintenance mode and
-  its successor Textual is 0.5.0, macOS 15+, with eager layout and `Mirror` reflection into
-  SwiftUI privates.
-- TextKit 2 still had open scroll and viewport defects being worked around in April 2026.
-- `createPDF(configuration:)` and `printOperation(with:)` have been public since macOS 11 —
-  the "WKWebView printing is broken" folklore traces to a repo last tested on macOS 10.15.
-- iA Writer Mono/Duo/Quattro are OFL 1.1 and can be bundled in a commercial app.
-
-**Killed**
-
-- "Pre-warming a WKWebView cuts first load ~45%" — the cited benchmark is an iPhone XR on
-  iOS 12.2 measuring per-load deltas inside a running app. Wrong platform, wrong measurement.
-- "JS Markdown renderers are ~7× slower than cmark" — measures library throughput on an 11 MB
-  corpus, irrelevant at artifact scale.
-- "TextKit 2 is production-ready as of macOS 14" — failed verification 0–3.
-
-**Unresolved**
-
-- Nothing in public establishes WKWebView cold-start cost on modern macOS. This is the single
-  most important number for the project and it has to be measured.
-
-## Build sequence
-
-| Phase | Duration | Scope |
-| --- | --- | --- |
-| **0 — Gate** | 2–3 days | Measurement spike: cold and warm launch-to-first-paint from a real Finder double-click, plus both PDF APIs on a hostile document. Nothing else starts until this number exists. |
-| 1 | ~2 weeks | AppKit shell, hardened WKWebView, cmark-gfm, three themes, source toggle, find, copy, UTI registration |
-| 2 | ~1 week | Print stylesheet, six theme folders, bundled OFL faces, export sheet |
-| 3 | ~1.5 weeks | FSEvents watching, live reload with scroll preservation, side tabs, folder mode, diff view |
-| 4 | ~1 week | Send-to menu, Quick Look extension, tree-sitter highlighting, notarization and Sparkle |
-
-Deferred on purpose: Mermaid/KaTeX behind a per-document opt-in, App Intents, click-to-edit
-blocks, a sandboxed App Store build.
-
-## Phase 0 acceptance
-
-| Cold-launch result | Response |
+| Issue | Impact |
 | --- | --- |
-| under ~250 ms | Proceed as proposed |
-| 250–450 ms | Proceed, then trim frameworks and defer non-essential init |
-| over ~450 ms | Ship a Quick Look extension for the instant peek; the app becomes the deliberate open |
+| HTML artifacts are wrapped in the shell's `<main class="doc">` and inherit its typography, so a self-contained dashboard gets clamped to a 68ch measure and re-themed | High for the artifact-viewer use case. Wants a raw-document path that skips `.doc` and the shell's DOM mutations |
+| An empty or whitespace-only file opens as a blank white window | The `.agentia-empty` state exists but is only used for "no document open" |
+| Mermaid fences render as plain code blocks; `$…$` math renders as raw TeX | Deferred deliberately (both need JS, behind a per-document opt-in), but very visible in agent output |
+| Dark mode looks nearly identical across all six themes — only the accent differs | Paper and ink come from `base.css`; whether that is right is a design call |
+| A wide table gives no visual hint that columns continue off-screen | It scrolls, but nothing says so |
+| Technical theme has `##`/`###` heading markers but no `#` on h1 | Terminal theme has all three |
+| Adjacent footnote references render as `34` rather than `3,4` | Reads as "thirty-four" |
 
-The third branch is a good outcome, not a failure — a Quick Look extension runs inside an
-already-resident host process, and it shares the rendering framework, so it's a build target
-rather than a second codebase.
+Four tests are known to be weak: the `javascript:` URL check never clicks the
+link, `check(1, "free(NULL) is safe")` is a tautology, `pageCount >= 1` cannot
+fail on a valid PDF, and the copy-button count lacks the non-empty guard its
+neighbour has.
+
+## Not built yet
+
+Sidebar document list and folder mode, find bar UI, send-to-app menu, Quick Look extension,
+syntax highlighting, Mermaid and KaTeX behind a per-document opt-in, App Intents, notarisation
+and Sparkle.

@@ -1,0 +1,24 @@
+/* Terminal — Logs and traces. Monospaced throughout, dark on screen, legible on paper.
+   Fonts degrade to system faces when the optional families are absent. */
+
+:root {
+  --measure: 88ch;
+  --size-body: 13.5px;
+  --leading: 1.66;
+  --accent: #7bb6c8;
+  --size-code: 1em;
+  --font-body: "JetBrains Mono", "SF Mono", Menlo, ui-monospace, monospace;
+  --font-head: "JetBrains Mono", "SF Mono", Menlo, ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, ui-monospace, monospace;
+}
+
+html[data-appearance="dark"] {
+  --accent: #7bb6c8;
+}
+
+.doc h1, .doc h2, .doc h3 { font-weight: 700; letter-spacing: -.01em; }
+.doc h1::before { content: "# ";   color: var(--fg-faint); font-weight: 400; }
+.doc h2::before { content: "## ";  color: var(--fg-faint); font-weight: 400; }
+.doc h3::before { content: "### "; color: var(--fg-faint); font-weight: 400; }
+.doc code { border: 0; background: transparent; padding: 0; color: var(--accent); }
+.doc pre code { color: inherit; }

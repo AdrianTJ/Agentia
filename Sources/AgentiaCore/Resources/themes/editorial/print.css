@@ -1,0 +1,16 @@
+/* Editorial — print. @page controls sheet geometry; running heads
+   come from the host print pipeline, since no shipping browser
+   engine implements CSS @page margin boxes. */
+
+@page {
+  size: Letter;
+  margin: 1.15in;
+}
+
+@media print {
+  :root { --size-body: 11.5pt; }
+  :root { --leading: 1.62; }
+  :root { --measure: none; }
+
+  .doc h1 { font-size: 1.75em; }
+}
