@@ -155,6 +155,12 @@ open -a .build/Agentia.app report.md
 | 250–450 ms | Proceed; trim frameworks and defer non-essential init |
 | over ~450 ms | Ship a Quick Look extension for the instant peek; the app becomes the deliberate open |
 
+## Picking this up
+
+If you are continuing this work — especially on a Mac, where the Swift can finally be
+compiled — start with [`HANDOFF.md`](HANDOFF.md). It covers the compile errors to expect
+first, the invariants that must not be broken, and the task order.
+
 ## Design documents
 
 | Document | What's in it |
