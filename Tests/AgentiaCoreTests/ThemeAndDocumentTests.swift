@@ -86,7 +86,9 @@ final class DocumentKindTests: XCTestCase {
     }
 
     func testUnknownExtensionsFallBackToPlainText() {
-        for ext in ["json", "py", "log", ""] {
+        // "text" used to be claimed as Markdown, which meant .text files were
+        // parsed as GFM rather than shown as source.
+        for ext in ["json", "py", "log", "text", "txt", ""] {
             XCTAssertEqual(DocumentKind.forFileExtension(ext), .plainText, "ext: \(ext)")
         }
     }

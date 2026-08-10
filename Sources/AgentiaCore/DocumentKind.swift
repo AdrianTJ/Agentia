@@ -11,7 +11,7 @@ public enum DocumentKind: String, Sendable, CaseIterable {
     /// Extensions claimed as Markdown. Deliberately broad — agents emit all of
     /// these — but matched case-insensitively against the last path component.
     public static let markdownExtensions: Set<String> = [
-        "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "text", "qmd", "rmd",
+        "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "qmd", "rmd",
     ]
 
     public static let htmlExtensions: Set<String> = ["html", "htm", "xhtml"]

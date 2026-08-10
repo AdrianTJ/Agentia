@@ -83,7 +83,9 @@ final class DocumentWindowController: NSWindowController {
         if let page = try? shell.page(content: body, theme: theme,
                                       title: "Agentia",
                                       appearance: Preferences.appearance) {
-            webView.load(page: page, assetRoot: FileManager.default.temporaryDirectory)
+            webView.load(page: page,
+                         assetRoot: FileManager.default.temporaryDirectory,
+                         profile: .markdown)
         }
     }
 
@@ -191,7 +193,7 @@ final class DocumentWindowController: NSWindowController {
             bootstrap: bootstrap
         ) else { return }
 
-        webView.load(page: page, assetRoot: snapshot.assetRoot)
+        webView.load(page: page, assetRoot: snapshot.assetRoot, profile: profile)
     }
 
     private func diffRangesForCurrentMode() -> [DiffRange]? {

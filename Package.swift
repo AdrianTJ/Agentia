@@ -40,7 +40,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "Agentia",
-            dependencies: ["AgentiaCore"]
+            dependencies: ["AgentiaCore"],
+            // Consumed by tools/make-app.sh when assembling the bundle, not a
+            // SwiftPM resource.
+            exclude: ["Info.plist"]
         ),
         .testTarget(
             name: "AgentiaCoreTests",

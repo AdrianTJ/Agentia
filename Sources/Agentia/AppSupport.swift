@@ -72,9 +72,18 @@ enum Clipboard {
 
         pasteboard.setString(html, forType: .html)
 
-        // Rich text, for Mail, Notes and Slack. Built from the HTML so it
-        // carries the same structure the reader saw.
-        if let data = Data(html.utf8) as Data?,
+        // Rich text, for Mail and Notes. Built from the HTML so it carries the
+        // structure the reader saw.
+        //
+        // The HTML is stripped of remote references first. NSAttributedString's
+        // HTML importer drives a legacy WebKit parser that performs synchronous
+        // network loads for external subresources — so copying a hostile
+        // document would phone home from the main thread, completely outside
+        // the CSP, the content rule list and the navigation delegate. tagfilter
+        // removes <script> but says nothing about <img src="https://tracker/">.
+        let safe = strippingRemoteReferences(from: html)
+
+        if let data = Data(safe.utf8) as Data?,
            let attributed = try? NSAttributedString(
                data: data,
                options: [.documentType: NSAttributedString.DocumentType.html,
@@ -85,6 +94,40 @@ enum Clipboard {
                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]) {
             pasteboard.setData(rtf, forType: .rtf)
         }
+    }
+
+    /// Removes any `src`/`href`/`url()` whose scheme is not local, so the HTML
+    /// importer has nothing to fetch.
+    static func strippingRemoteReferences(from html: String) -> String {
+        let patterns = [
+            #"(?i)\s(src|href|poster|srcset|background)\s*=\s*"[^"]*""#,
+            #"(?i)\s(src|href|poster|srcset|background)\s*=\s*'[^']*'"#,
+            #"(?i)url\(\s*['"]?[^)]*\)"#,
+        ]
+
+        var out = html
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let full = NSRange(out.startIndex..., in: out)
+
+            var result = ""
+            var last = out.startIndex
+            regex.enumerateMatches(in: out, range: full) { match, _, _ in
+                guard let match, let range = Range(match.range, in: out) else { return }
+                let text = String(out[range])
+                // Keep local references: an inline data: image or an
+                // in-document anchor is harmless and worth preserving.
+                let lowered = text.lowercased()
+                let isLocal = lowered.contains("\"#") || lowered.contains("'#")
+                    || lowered.contains("data:") || lowered.contains("artifact:")
+                result += out[last..<range.lowerBound]
+                result += isLocal ? text : ""
+                last = range.upperBound
+            }
+            result += out[last...]
+            out = result
+        }
+        return out
     }
 }
 

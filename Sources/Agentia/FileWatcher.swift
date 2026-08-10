@@ -23,6 +23,10 @@ final class FileWatcher {
     private let onChange: () -> Void
     private let queue: DispatchQueue
 
+    /// `stream` and `debounceWorkItem` are touched from the watcher queue (via
+    /// the callback) and from the main thread (start/stop), so they need a lock
+    /// rather than bare access.
+    private let stateLock = NSLock()
     private var stream: FSEventStreamRef?
     private var debounceWorkItem: DispatchWorkItem?
 
@@ -43,24 +47,50 @@ final class FileWatcher {
         stop()
     }
 
-    var isRunning: Bool { stream != nil }
+    var isRunning: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return stream != nil
+    }
 
     func start() {
-        guard stream == nil else { return }
+        stateLock.lock()
+        let alreadyRunning = stream != nil
+        stateLock.unlock()
+        guard !alreadyRunning else { return }
 
+        // The stream retains a small box, not the watcher.
+        //
+        // passUnretained(self) was unsafe: callbacks arrive asynchronously on a
+        // background queue and FSEventStreamInvalidate does not join one that
+        // is already executing, so the callback could resurrect a deallocating
+        // object. passRetained(self) fixes that but creates a cycle — the
+        // stream would keep the watcher alive and deinit could never run.
+        //
+        // A box retained by the stream and holding the watcher weakly gets
+        // both: deinit still fires, and a callback racing with deallocation
+        // reads a weak reference that Swift has already zeroed, so it sees nil
+        // and returns.
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
+            info: Unmanaged.passRetained(WatcherBox(self)).toOpaque(),
             retain: nil,
-            release: nil,
+            release: { pointer in
+                guard let pointer else { return }
+                Unmanaged<WatcherBox>.fromOpaque(pointer).release()
+            },
             copyDescription: nil
         )
 
         let flags = UInt32(
             kFSEventStreamCreateFlagUseCFTypes
+            // FileEvents is what yields per-file paths rather than directory
+            // granularity — without it a rename-over is reported against the
+            // directory and the specific path is lost.
             | kFSEventStreamCreateFlagFileEvents
-            // Without this, a rename-over is reported against the directory and
-            // the specific path is lost.
+            // NoDefer makes the first event in a burst fire immediately rather
+            // than after the latency timer. Latency is 0 here and coalescing is
+            // done in handle(paths:), so this only removes a needless delay.
             | kFSEventStreamCreateFlagNoDefer
         )
 
@@ -85,18 +115,26 @@ final class FileWatcher {
             return
         }
 
+        stateLock.lock()
         stream = created
+        stateLock.unlock()
     }
 
     func stop() {
+        stateLock.lock()
+        let doomed = stream
+        stream = nil
         debounceWorkItem?.cancel()
         debounceWorkItem = nil
+        stateLock.unlock()
 
-        guard let stream else { return }
-        FSEventStreamStop(stream)
-        FSEventStreamInvalidate(stream)
-        FSEventStreamRelease(stream)
-        self.stream = nil
+        guard let doomed else { return }
+        FSEventStreamStop(doomed)
+        // Detach the queue before invalidating so no further callbacks are
+        // scheduled while teardown is in progress.
+        FSEventStreamSetDispatchQueue(doomed, nil)
+        FSEventStreamInvalidate(doomed)
+        FSEventStreamRelease(doomed)
     }
 
     // MARK: - Event handling
@@ -111,7 +149,6 @@ final class FileWatcher {
         }
         guard matches else { return }
 
-        debounceWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             // A rename-over is briefly visible as a missing file. Reporting a
@@ -120,13 +157,25 @@ final class FileWatcher {
             guard FileManager.default.fileExists(atPath: self.fileURL.path) else { return }
             self.onChange()
         }
+
+        stateLock.lock()
+        debounceWorkItem?.cancel()
         debounceWorkItem = work
+        stateLock.unlock()
+
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.debounceInterval, execute: work)
     }
 }
 
-/// C callback trampoline. `info` is an unretained pointer to the watcher, which
-/// is valid because `stop()` runs from `deinit` before the object goes away.
+/// Retained by the FSEvents stream so the callback always has a valid pointer,
+/// while holding the watcher weakly so the stream does not keep it alive.
+private final class WatcherBox {
+    weak var watcher: FileWatcher?
+    init(_ watcher: FileWatcher) { self.watcher = watcher }
+}
+
+/// C callback trampoline. `info` is a retained `WatcherBox`, released by the
+/// stream's own release callback.
 private func eventCallback(
     stream: ConstFSEventStreamRef,
     info: UnsafeMutableRawPointer?,
@@ -136,8 +185,13 @@ private func eventCallback(
     ids: UnsafePointer<FSEventStreamEventId>
 ) {
     guard let info else { return }
-    let watcher = Unmanaged<FileWatcher>.fromOpaque(info).takeUnretainedValue()
+    let box = Unmanaged<WatcherBox>.fromOpaque(info).takeUnretainedValue()
+    guard let watcher = box.watcher else { return }
 
-    guard let cfPaths = unsafeBitCast(paths, to: NSArray.self) as? [String] else { return }
-    watcher.handle(paths: cfPaths)
+    // kFSEventStreamCreateFlagUseCFTypes means `paths` is a CFArrayRef. Taking
+    // it through Unmanaged is the checked form of the widely-copied
+    // unsafeBitCast idiom.
+    guard let array = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue()
+        as? [String] else { return }
+    watcher.handle(paths: array)
 }

@@ -196,33 +196,80 @@ public struct RenderShell: Sendable {
             scriptHash: Self.sha256Base64(js)
         )
 
-        // Order matters only in that content is substituted before the script:
-        // document text can therefore never introduce a placeholder that a
-        // later substitution would fill in.
-        let substitutions: [(String, String)] = [
-            ("{{APPEARANCE}}", appearance.rawValue),
-            ("{{CSP}}", csp),
-            ("{{TITLE}}", Self.escapeForHTMLText(title)),
-            ("{{BASE_CSS}}", baseCSS),
-            ("{{THEME_CSS}}", theme.css),
-            ("{{BOOTSTRAP_JSON}}", Self.bootstrapJSON(bootstrap)),
-            ("{{CONTENT}}", content),
-            ("{{SHELL_JS}}", js),
+        let values: [String: String] = [
+            "APPEARANCE": appearance.rawValue,
+            "CSP": csp,
+            "TITLE": Self.escapeForHTMLText(title),
+            "BASE_CSS": baseCSS,
+            "THEME_CSS": theme.css,
+            "BOOTSTRAP_JSON": Self.bootstrapJSON(bootstrap),
+            "CONTENT": content,
+            "SHELL_JS": js,
         ]
 
-        var out = template
-        for (token, value) in substitutions {
-            out = out.replacingOccurrences(of: token, with: value)
-        }
+        return Self.substitute(template, values)
+    }
 
-        // A surviving placeholder means the template gained a token this code
-        // does not know about. Failing loudly beats shipping "{{FOO}}" to the
-        // reader.
-        for token in Self.templateTokens where out.contains(token) {
-            throw Error.unsubstitutedPlaceholder(token)
-        }
+    /// Fill placeholders in a single pass.
+    ///
+    /// Sequential `replacingOccurrences` calls were wrong in both directions: a
+    /// token substituted early could be re-substituted by a later pass if the
+    /// document happened to contain one, and a token the document mentioned but
+    /// this code did not know about aborted the whole render. Documents about
+    /// Handlebars, Jinja, Vue or Go templates are an entirely ordinary thing for
+    /// an agent to write.
+    ///
+    /// Scanning once makes substitution non-reentrant by construction: a
+    /// placeholder that arrives inside a value is never revisited, and an
+    /// unknown one is emitted as literal text rather than failing.
+    static func substitute(_ template: String, _ values: [String: String]) -> String {
+        var out = ""
+        out.reserveCapacity(template.count + 8192)
 
+        var index = template.startIndex
+        while index < template.endIndex {
+            guard template[index] == "{",
+                  let afterBraces = template.index(index, offsetBy: 2,
+                                                   limitedBy: template.endIndex),
+                  template[index..<afterBraces] == "{{",
+                  let name = Self.readToken(template, from: afterBraces)
+            else {
+                out.append(template[index])
+                index = template.index(after: index)
+                continue
+            }
+
+            out += values[name.text] ?? "{{\(name.text)}}"
+            index = name.end
+        }
         return out
+    }
+
+    /// Reads `IDENT}}` starting at `start`, where IDENT is uppercase and
+    /// underscores. Bounded so an unmatched `{{` cannot scan to end of file.
+    private static func readToken(
+        _ text: String,
+        from start: String.Index
+    ) -> (text: String, end: String.Index)? {
+        let maximumNameLength = 32
+        var cursor = start
+        var length = 0
+
+        while cursor < text.endIndex, length <= maximumNameLength {
+            let character = text[cursor]
+            if character == "}" {
+                guard let close = text.index(cursor, offsetBy: 2,
+                                             limitedBy: text.endIndex),
+                      text[cursor..<close] == "}}",
+                      length > 0
+                else { return nil }
+                return (String(text[start..<cursor]), close)
+            }
+            guard character.isUppercase || character == "_" else { return nil }
+            cursor = text.index(after: cursor)
+            length += 1
+        }
+        return nil
     }
 
     static let templateTokens = [

@@ -130,22 +130,33 @@ export function buildPage({
   const js = shellScript();
   const csp = contentSecurityPolicy(profile, shellScriptHash(js));
 
-  const substitutions = {
-    "{{APPEARANCE}}": appearance,
-    "{{CSP}}": csp,
-    "{{TITLE}}": escapeForHTMLText(title),
-    "{{BASE_CSS}}": baseCSS,
-    "{{THEME_CSS}}": themeCSS(themeId),
-    "{{BOOTSTRAP_JSON}}": bootstrapJSON(bootstrap),
-    "{{CONTENT}}": content,
-    "{{SHELL_JS}}": js,
+  const values = {
+    APPEARANCE: appearance,
+    CSP: csp,
+    TITLE: escapeForHTMLText(title),
+    BASE_CSS: baseCSS,
+    THEME_CSS: themeCSS(themeId),
+    BOOTSTRAP_JSON: bootstrapJSON(bootstrap),
+    CONTENT: content,
+    SHELL_JS: js,
   };
 
-  let out = template;
-  for (const [token, value] of Object.entries(substitutions)) {
-    // split/join rather than replace: a "$&" or "$1" inside document content
-    // would otherwise be interpreted as a replacement pattern.
-    out = out.split(token).join(value);
-  }
-  return out;
+  return substitute(template, values);
+}
+
+/**
+ * Single-pass placeholder fill, mirroring AgentiaCore.RenderShell.substitute.
+ *
+ * Sequential replaces were wrong in both directions: a token could be
+ * re-substituted by a later pass if the document contained one, and an unknown
+ * token aborted the render. A document about Handlebars or Jinja is an ordinary
+ * thing for an agent to write, so unknown tokens pass through as literal text.
+ *
+ * The replacer function form also avoids "$&" and "$1" inside document content
+ * being treated as replacement patterns.
+ */
+export function substitute(template, values) {
+  return template.replace(/\{\{([A-Z_]{1,32})\}\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(values, name) ? values[name] : match
+  );
 }

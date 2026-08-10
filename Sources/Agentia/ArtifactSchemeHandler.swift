@@ -63,10 +63,16 @@ final class ArtifactSchemeHandler: NSObject, WKURLSchemeHandler {
             serveDocument(payload.html, to: task, url: url)
 
         case "asset":
-            // `URL.path` is already percent-decoded; AssetResolver re-checks
-            // and does its own decoding, so pass the raw form when available.
-            let reference = String(url.path.dropFirst()) // strip leading "/"
-            serveAsset(reference, resolver: payload.resolver, to: task, url: url)
+            // Pass the still-encoded path. `URL.path` is already decoded, and
+            // handing that to AssetResolver — which decodes again — double
+            // decodes: a file named "50%.png" fails to decode the second time
+            // and silently never loads. Double decoding inside a path
+            // containment routine is also the shape of bug that turns
+            // exploitable the moment the checks are reordered.
+            let encodedPath = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .percentEncodedPath ?? url.path
+            serveAsset(String(encodedPath.dropFirst()),
+                       resolver: payload.resolver, to: task, url: url)
 
         default:
             task.didFailWithError(Failure.unknownHost)
@@ -82,19 +88,20 @@ final class ArtifactSchemeHandler: NSObject, WKURLSchemeHandler {
 
     private func serveDocument(_ html: String, to task: WKURLSchemeTask, url: URL) {
         let data = Data(html.utf8)
-        let response = HTTPURLResponse(
+        guard let response = HTTPURLResponse(
             url: url,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: [
                 "Content-Type": "text/html; charset=utf-8",
                 "Content-Length": String(data.count),
-                // The page carries its own CSP meta tag; sending it as a header
-                // as well means a document that strips the tag still cannot
-                // widen its own policy.
+                "X-Content-Type-Options": "nosniff",
                 "Cache-Control": "no-store",
             ]
-        )!
+        ) else {
+            task.didFailWithError(Failure.badRequest)
+            return
+        }
         task.didReceive(response)
         task.didReceive(data)
         task.didFinish()
@@ -109,14 +116,17 @@ final class ArtifactSchemeHandler: NSObject, WKURLSchemeHandler {
         do {
             let fileURL = try resolver.resolve(reference)
 
-            let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            // Default to "too large" when the size cannot be read: defaulting
+            // to zero would mean an unreadable size always passes the cap.
+            let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+                ?? Int.max
             guard size <= Self.maximumAssetBytes else {
                 task.didFailWithError(Failure.assetTooLarge)
                 return
             }
 
             let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
-            let response = HTTPURLResponse(
+            guard let response = HTTPURLResponse(
                 url: url,
                 statusCode: 200,
                 httpVersion: "HTTP/1.1",
@@ -127,7 +137,10 @@ final class ArtifactSchemeHandler: NSObject, WKURLSchemeHandler {
                     "X-Content-Type-Options": "nosniff",
                     "Cache-Control": "no-store",
                 ]
-            )!
+            ) else {
+                task.didFailWithError(Failure.assetUnavailable)
+                return
+            }
             task.didReceive(response)
             task.didReceive(data)
             task.didFinish()

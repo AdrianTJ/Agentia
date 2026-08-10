@@ -43,12 +43,16 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Agentia"
 cp "$ROOT/Sources/Agentia/Info.plist" "$APP/Contents/Info.plist"
 
-# SwiftPM emits resources as a .bundle beside the binary; the app needs it
-# alongside the executable so Bundle.module resolves.
+# SwiftPM emits resources as a .bundle beside the binary. It must land in
+# Contents/Resources: Bundle.module only searches Bundle.main.resourceURL,
+# the defining bundle's resourceURL, and Bundle.main.bundleURL. Contents/MacOS
+# is none of those, and the generated accessor ends in fatalError() — which
+# would crash during applicationWillFinishLaunching, before first paint.
+# This does not reproduce under `swift run`, where bundleURL is the bin dir.
 BIN_DIR="$(dirname "$BIN")"
 for bundle in "$BIN_DIR"/*.bundle; do
   [ -e "$bundle" ] || continue
-  cp -R "$bundle" "$APP/Contents/MacOS/"
+  cp -R "$bundle" "$APP/Contents/Resources/"
 done
 
 # Ad-hoc signature: enough for local launching. A distributed build needs a

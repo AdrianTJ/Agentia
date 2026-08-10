@@ -16,8 +16,8 @@ enum Launch {
     static let signposter = OSSignposter(logHandle: Logger(subsystem: "app.agentia",
                                                            category: "launch"))
 
-    nonisolated(unsafe) static var processStart = Date()
-    nonisolated(unsafe) static var didLogFirstPaint = false
+    static var processStart = Date()
+    static var didLogFirstPaint = false
 
     static func mark(_ name: StaticString) {
         os_signpost(.event, log: log, name: name)
@@ -39,13 +39,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var webView: HardenedWebView!
     private var windowController: DocumentWindowController!
 
-    /// Documents whose open arrived before the window existed.
-    private var pendingOpens: [URL] = []
+    /// application(_:open:) is delivered after applicationWillFinishLaunching
+    /// and before applicationDidFinishLaunching, so by the time the empty state
+    /// would be shown a document may already be on screen.
+    private var hasOpenedDocument = false
+
+    /// NSApplication.delegate is weak, and Swift only guarantees a local's
+    /// lifetime up to its last use — under -O the delegate could be released
+    /// immediately after assignment, leaving the app with no delegate and no
+    /// explanation. Debug builds usually mask it, which is the worst case.
+    private static var retainedDelegate: AppDelegate?
 
     static func main() {
         Launch.processStart = Date()
         let app = NSApplication.shared
         let delegate = AppDelegate()
+        Self.retainedDelegate = delegate
         app.delegate = delegate
         // A document viewer is a regular app: it needs a Dock icon and a menu.
         app.setActivationPolicy(.regular)
@@ -75,10 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Launch.mark("didFinishLaunching")
         installMenu()
 
-        if pendingOpens.isEmpty {
-            // Launched with no document: show the window so the app is not
-            // invisible, with an empty state rather than a blank page.
-            windowController.showWindow(nil)
+        windowController.showWindow(nil)
+        if !hasOpenedDocument {
+            // Launched with no document: an empty state rather than a blank
+            // page. Guarded, or the most important flow in the app — double
+            // clicking a .md in Finder — would render the document and then
+            // immediately overwrite it with "Open a file to begin".
             windowController.showEmptyState()
         }
     }
@@ -88,13 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         Launch.mark("openURLs")
 
-        guard windowController != nil else {
-            pendingOpens.append(contentsOf: urls)
-            return
-        }
-
         for url in urls {
             windowController.open(url)
+            hasOpenedDocument = true
         }
         windowController.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)

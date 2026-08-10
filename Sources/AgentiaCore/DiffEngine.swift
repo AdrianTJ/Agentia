@@ -112,14 +112,20 @@ public enum DiffEngine {
         let n = old.count
         let m = new.count
 
-        // table[i][j] = LCS length of old[i...] and new[j...]
-        var table = [[Int]](repeating: [Int](repeating: 0, count: m + 1), count: n + 1)
+        // table[i * stride + j] = LCS length of old[i...] and new[j...].
+        // Flat rather than nested: at the 2000-line limit an array of arrays is
+        // ~32 MB spread over 2001 separate heap buffers, and every access pays
+        // a second bounds check and a retain.
+        let rowStride = m + 1
+        var table = [Int](repeating: 0, count: (n + 1) * rowStride)
         if n > 0 && m > 0 {
             for i in stride(from: n - 1, through: 0, by: -1) {
+                let row = i * rowStride
+                let nextRow = row + rowStride
                 for j in stride(from: m - 1, through: 0, by: -1) {
-                    table[i][j] = old[i] == new[j]
-                        ? table[i + 1][j + 1] + 1
-                        : max(table[i + 1][j], table[i][j + 1])
+                    table[row + j] = old[i] == new[j]
+                        ? table[nextRow + j + 1] + 1
+                        : max(table[nextRow + j], table[row + j + 1])
                 }
             }
         }
@@ -129,7 +135,7 @@ public enum DiffEngine {
         while i < n && j < m {
             if old[i] == new[j] {
                 script.append(.keep); i += 1; j += 1
-            } else if table[i + 1][j] >= table[i][j + 1] {
+            } else if table[(i + 1) * rowStride + j] >= table[i * rowStride + j + 1] {
                 script.append(.delete); i += 1
             } else {
                 script.append(.insert); j += 1

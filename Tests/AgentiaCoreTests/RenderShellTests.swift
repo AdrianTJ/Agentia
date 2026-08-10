@@ -148,9 +148,9 @@ final class RenderShellTests: XCTestCase {
         }
     }
 
+    /// Substitution is a single pass, so a placeholder that arrives inside a
+    /// value is never revisited.
     func testDocumentContentCannotIntroduceAPlaceholder() throws {
-        // Content is substituted before the script, so a placeholder inside the
-        // document must survive as literal text rather than being filled in.
         let shell = try makeShell()
         let page = try shell.page(content: "<p>{{SHELL_JS}}</p>",
                                   theme: try makeTheme(),
@@ -158,6 +158,39 @@ final class RenderShellTests: XCTestCase {
 
         XCTAssertTrue(page.contains("<p>{{SHELL_JS}}</p>"),
                       "a placeholder in document text must not be substituted")
+    }
+
+    /// A document about templating languages must still open. Sequential
+    /// replacement used to abort the whole render on an unknown token, which
+    /// surfaced as the window simply not updating.
+    func testUnknownPlaceholdersInContentArePassedThrough() throws {
+        let shell = try makeShell()
+        let content = "<p>Use {{USER_NAME}} and {{ NOT_A_TOKEN }} and {{lowercase}}.</p>"
+        let page = try shell.page(content: content, theme: try makeTheme(), title: "T")
+
+        XCTAssertTrue(page.contains("{{USER_NAME}}"))
+        XCTAssertTrue(page.contains("{{ NOT_A_TOKEN }}"))
+        XCTAssertTrue(page.contains("{{lowercase}}"))
+    }
+
+    func testKnownPlaceholderInTheTitleIsNotExpanded() throws {
+        // The filename reaches the template as a value, not as template text.
+        let shell = try makeShell()
+        let page = try shell.page(content: "<p>x</p>", theme: try makeTheme(),
+                                  title: "{{BASE_CSS}}.md")
+
+        XCTAssertTrue(page.contains("<title>{{BASE_CSS}}.md</title>"),
+                      "a token in the filename must not dump a stylesheet into the title")
+    }
+
+    func testSubstituteHandlesUnterminatedBraces() {
+        // An unmatched "{{" must not scan to end of file.
+        XCTAssertEqual(RenderShell.substitute("a {{ b", [:]), "a {{ b")
+        XCTAssertEqual(RenderShell.substitute("{{}}", [:]), "{{}}")
+        XCTAssertEqual(RenderShell.substitute("{{X}}", ["X": "1"]), "1")
+        XCTAssertEqual(RenderShell.substitute("{{X}}{{X}}", ["X": "1"]), "11")
+        // A value containing a placeholder is not revisited.
+        XCTAssertEqual(RenderShell.substitute("{{X}}", ["X": "{{X}}"]), "{{X}}")
     }
 
     func testPageEmbedsThemeAndBaseStylesAndScript() throws {

