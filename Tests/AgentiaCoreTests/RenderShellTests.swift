@@ -102,8 +102,17 @@ final class RenderShellTests: XCTestCase {
                                       title: "T", profile: profile)
             XCTAssertTrue(page.contains("connect-src 'none'"), "profile: \(profile)")
             XCTAssertTrue(page.contains("default-src 'none'"), "profile: \(profile)")
-            XCTAssertFalse(page.contains("https://"),
+
+            // Assert against the policy itself rather than the whole page: a
+            // stylesheet comment mentioning a URL should not fail this.
+            let policy = RenderShell.contentSecurityPolicy(
+                profile: profile,
+                scriptHash: try shell.shellScriptHash()
+            )
+            XCTAssertFalse(policy.contains("http"),
                            "no remote origin may appear in the CSP for \(profile)")
+            XCTAssertFalse(policy.contains("*"),
+                           "no wildcard source may appear in the CSP for \(profile)")
         }
     }
 
