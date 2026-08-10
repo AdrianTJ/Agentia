@@ -68,8 +68,8 @@ layer.
 Two of the three layers are testable **without a Mac**, which is how they were developed:
 
 ```bash
-./tools/build-ctest.sh              # C parsing core — 71 checks, clang only
-node tools/webtest/run-tests.mjs    # render shell in real Chromium — 104 checks
+./tools/build-ctest.sh                # C parsing core — 102 checks, clang only
+node tools/webtest/run-tests.mjs      # render shell in real Chromium — 147 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 ```
 
@@ -86,8 +86,8 @@ Being honest about this matters more than looking finished.
 
 | Layer | Status |
 | --- | --- |
-| C parsing core | **Tested.** 71 checks: CommonMark, every GFM extension, source positions, edge cases, throughput, pathological input |
-| Render shell, themes, print CSS | **Tested in a real browser.** 104 checks including CSP enforcement and PDF content extraction |
+| C parsing core | **Tested.** 102 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
+| Render shell, themes, print CSS | **Tested in a real browser.** 147 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
 | Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors |
 | AgentiaCore Swift | **Written, not yet compiled.** Full XCTest suite ships; needs `swift test` on a Mac |
 | macOS app layer | **Written, not yet compiled.** Needs the macOS SDK |
@@ -118,6 +118,13 @@ environment, not a design assumption.
   actually scrolled.
 - **A case-preservation bug** in the Swift `</script` neutralisation, found by building the
   parity harness rather than by reading the code.
+
+A review pass and a dogfooding pass then found more, including three defects that would
+each have stopped the app on first run (the resource bundle in a directory `Bundle.module`
+never searches; a weak app delegate held only by a local; an empty state that overwrote
+every Finder-opened document), a message-bridge hole that let an HTML artifact exfiltrate
+document text with one line of script, wide tables losing 18 of 28 columns in the PDF, and a
+200 KB file that could wedge the renderer indefinitely.
 
 ## Measured
 
@@ -166,6 +173,25 @@ Font stacks degrade to system faces when the optional OFL families are absent. T
 families and IBM Plex are OFL 1.1 and can be bundled outright; Charter, Palatino and SF Mono
 already ship with macOS. Running heads come from `NSPrintInfo`, not CSS — no shipping browser
 engine implements CSS `@page` margin boxes.
+
+## Known issues
+
+Found by dogfooding and not yet fixed. Recorded rather than quietly dropped.
+
+| Issue | Impact |
+| --- | --- |
+| HTML artifacts are wrapped in the shell's `<main class="doc">` and inherit its typography, so a self-contained dashboard gets clamped to a 68ch measure and re-themed | High for the artifact-viewer use case. Wants a raw-document path that skips `.doc` and the shell's DOM mutations |
+| An empty or whitespace-only file opens as a blank white window | The `.agentia-empty` state exists but is only used for "no document open" |
+| Mermaid fences render as plain code blocks; `$…$` math renders as raw TeX | Deferred deliberately (both need JS, behind a per-document opt-in), but very visible in agent output |
+| Dark mode looks nearly identical across all six themes — only the accent differs | Paper and ink come from `base.css`; whether that is right is a design call |
+| A wide table gives no visual hint that columns continue off-screen | It scrolls, but nothing says so |
+| Technical theme has `##`/`###` heading markers but no `#` on h1 | Terminal theme has all three |
+| Adjacent footnote references render as `34` rather than `3,4` | Reads as "thirty-four" |
+
+Four tests are known to be weak: the `javascript:` URL check never clicks the
+link, `check(1, "free(NULL) is safe")` is a tautology, `pageCount >= 1` cannot
+fail on a valid PDF, and the copy-button count lacks the non-empty guard its
+neighbour has.
 
 ## Not built yet
 
