@@ -60,6 +60,15 @@ $CC -O2 -std=gnu11 -Wall -Wextra -Werror \
   -lpthread \
   -o "$OUT/test_markdown"
 
+echo "==> building render CLI"
+$CC -O2 -std=gnu11 -Wall -Wextra -Werror \
+  "${INCLUDES[@]}" \
+  "$ROOT/Sources/CAgentiaMarkdown/agentia_markdown.c" \
+  "$ROOT/tools/cli/agentia_render_cli.c" \
+  "$LIB" \
+  -lpthread \
+  -o "$OUT/agentia_render_cli"
+
 echo "==> running"
 echo
 "$OUT/test_markdown"

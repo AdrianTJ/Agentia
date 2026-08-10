@@ -1,0 +1,18 @@
+/* Manuscript — Long prose reports. Generous leading, narrow measure, humanist type.
+   Fonts degrade to system faces when the optional families are absent. */
+
+:root {
+  --measure: 66ch;
+  --size-body: 17px;
+  --leading: 1.72;
+  --size-code: 0.84em;
+  --accent: #2f6272;
+  --pad-top: 52px;
+  --font-body: "iA Writer Quattro S", "iA Writer Quattro", "Iowan Old Style", Charter, Georgia, serif;
+  --font-head: "iA Writer Quattro S", "iA Writer Quattro", "Iowan Old Style", Charter, Georgia, serif;
+  --font-mono: "iA Writer Mono S", "iA Writer Mono", "SF Mono", Menlo, ui-monospace, monospace;
+}
+
+html[data-appearance="dark"] {
+  --accent: #7bb6c8;
+}

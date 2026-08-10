@@ -1,0 +1,17 @@
+{
+  "id": "editorial",
+  "name": "Editorial",
+  "order": 4,
+  "description": "Reading at length on paper. Wide margins, old-style figures, larger type.",
+  "prefersDarkAppearance": false,
+  "fonts": {
+    "body": "Charter, \"Iowan Old Style\", \"Palatino Linotype\", Palatino, Georgia, serif",
+    "heading": "Charter, \"Iowan Old Style\", \"Palatino Linotype\", Palatino, Georgia, serif",
+    "mono": "\"SF Mono\", Menlo, ui-monospace, monospace"
+  },
+  "requiredFonts": [],
+  "page": {
+    "size": "Letter",
+    "margin": "1.15in"
+  }
+}

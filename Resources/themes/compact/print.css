@@ -1,0 +1,17 @@
+/* Compact — print. @page controls sheet geometry; running heads
+   come from the host print pipeline, since no shipping browser
+   engine implements CSS @page margin boxes. */
+
+@page {
+  size: Letter;
+  margin: 0.6in;
+}
+
+@media print {
+  :root { --size-body: 8.8pt; }
+  :root { --leading: 1.38; }
+  :root { --measure: none; }
+
+  .doc pre { font-size: 7.6pt; padding: 6pt 8pt; }
+  .doc h2 { margin: 1.1em 0 .3em; }
+}

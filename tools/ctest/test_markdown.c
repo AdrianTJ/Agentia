@@ -124,6 +124,90 @@ static void test_gfm_extensions(void) {
   agentia_md_free(h);
 }
 
+/* swift-cmark's gfm branch emits an unterminated aria-label on the footnote
+   backref, which swallows the rest of the document. The shim repairs it; these
+   tests pin both the repair and the paths it must not touch. */
+static void test_footnote_backref_repair(void) {
+  printf("footnote backref repair\n");
+
+  char *h = render_default("A note[^1]\n\n[^1]: Body text.\n");
+  check_absent(h, "reference 1\xe2\x86\xa9", "unterminated aria-label is repaired");
+  check_contains(h, "aria-label=\"Back to reference 1\">\xe2\x86\xa9",
+                 "backref closes its attribute and tag");
+  check_contains(h, "Body text", "footnote body still present");
+  agentia_md_free(h);
+
+  /* Named footnotes go down the same path. */
+  h = render_default("See[^method]\n\n[^method]: How it works.\n");
+  check_contains(h, "aria-label=\"Back to reference 1\">", "named footnote repaired");
+  check_absent(h, "reference 1\xe2\x86\xa9", "no unterminated attribute remains");
+  agentia_md_free(h);
+
+  /* Two separate footnotes: two repairs in one document. */
+  h = render_default("A[^a] and B[^b]\n\n[^a]: First.\n\n[^b]: Second.\n");
+  check_contains(h, "aria-label=\"Back to reference 1\">", "first of two repaired");
+  check_contains(h, "aria-label=\"Back to reference 2\">", "second of two repaired");
+  check_absent(h, "reference 1\xe2\x86\xa9", "first has no dangling attribute");
+  check_absent(h, "reference 2\xe2\x86\xa9", "second has no dangling attribute");
+  agentia_md_free(h);
+
+  /* A footnote referenced twice takes the multi-backref path, which upstream
+     already writes correctly. The repair must leave it alone. */
+  h = render_default("A[^x] then again[^x]\n\n[^x]: Shared.\n");
+  check_absent(h, "\">\">", "correct multi-backref markup is not double-patched");
+  agentia_md_free(h);
+
+  /* The literal arrow in ordinary prose must survive untouched. */
+  h = render_default("Press the return arrow \xe2\x86\xa9 to continue.\n");
+  check_contains(h, "\xe2\x86\xa9", "arrow in body text is preserved");
+  check_absent(h, "\">\xe2\x86\xa9", "no spurious quote inserted in prose");
+  agentia_md_free(h);
+
+  /* Text that merely resembles the pattern must not be rewritten. */
+  h = render_default("Back to reference 1 is a phrase, not markup.\n");
+  check_contains(h, "Back to reference 1 is a phrase",
+                 "prose resembling the pattern is untouched");
+  agentia_md_free(h);
+
+  /* A document with no footnotes must take the zero-copy path unharmed. */
+  h = render_default("# Plain\n\nNothing to repair.\n");
+  check_contains(h, "Nothing to repair", "documents without footnotes are unchanged");
+  agentia_md_free(h);
+}
+
+/* The real failure mode was structural: malformed markup ended the document
+   early. Assert well-formedness directly rather than only pattern-matching. */
+static void test_output_is_well_formed(void) {
+  printf("output well-formedness\n");
+
+  const char *docs[] = {
+      "A note[^1]\n\n[^1]: Body.\n",
+      "# H\n\nText[^a]\n\n## H2\n\nMore\n\n[^a]: Note.\n",
+      "| a | b |\n| - | - |\n| 1 | 2 |\n\nAfter[^n]\n\n[^n]: End.\n",
+  };
+
+  for (size_t i = 0; i < sizeof(docs) / sizeof(docs[0]); i++) {
+    char *h = render_default(docs[i]);
+    if (h == NULL) {
+      check(0, "render succeeded");
+      continue;
+    }
+
+    /* Every double quote inside a tag must be balanced: walk the output and
+       confirm we never reach EOF while inside an attribute value. */
+    int in_tag = 0, in_quote = 0;
+    for (const char *p = h; *p; p++) {
+      if (!in_tag && *p == '<') in_tag = 1;
+      else if (in_tag && *p == '"') in_quote = !in_quote;
+      else if (in_tag && *p == '>' && !in_quote) in_tag = 0;
+    }
+    check(!in_quote, "output never ends inside an attribute value");
+    check(!in_tag, "output never ends inside a tag");
+
+    agentia_md_free(h);
+  }
+}
+
 static void test_sourcepos(void) {
   printf("sourcepos\n");
 
@@ -338,6 +422,8 @@ int main(void) {
 
   test_basics();
   test_gfm_extensions();
+  test_footnote_backref_repair();
+  test_output_is_well_formed();
   test_sourcepos();
   test_raw_html_and_tagfilter();
   test_edge_cases();

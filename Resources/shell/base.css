@@ -1,0 +1,353 @@
+/*
+ * base.css — structure shared by every theme.
+ *
+ * Themes own typography and colour. This file owns layout, the code/table
+ * containers, diff decorations, and the print rules that must hold no matter
+ * which theme is active. Everything is driven by custom properties so a theme
+ * can retune without overriding selectors and fighting the cascade.
+ */
+
+/* ---- tokens: light is the base, themes redefine these ---- */
+:root {
+  --measure: 68ch;
+  --pad-x: 40px;
+  --pad-top: 46px;
+  --pad-bottom: 96px;
+
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-head: var(--font-body);
+  --font-mono: "SF Mono", Menlo, ui-monospace, monospace;
+  --size-body: 17px;
+  --leading: 1.66;
+  --size-code: 0.82em;
+
+  --fg: #1c1e22;
+  --fg-dim: #5e646f;
+  --fg-faint: #8b919c;
+  --bg: #ffffff;
+  --bg-sunken: #f4f4f2;
+  --rule: #00000018;
+  --rule-soft: #0000000d;
+  --accent: #2f6272;
+  --sel: #2f627226;
+
+  --diff-add: #2f7350;
+  --diff-add-bg: #2f735014;
+  --diff-mod: #a8681f;
+  --diff-mod-bg: #a8681f14;
+  --diff-del: #a8474a;
+  --diff-del-bg: #a8474a12;
+}
+
+html[data-appearance="dark"] {
+  --fg: #e3e4e6;
+  --fg-dim: #9ba0aa;
+  --fg-faint: #6b7079;
+  --bg: #1f2126;
+  --bg-sunken: #191b1f;
+  --rule: #ffffff1c;
+  --rule-soft: #ffffff10;
+  --accent: #7bb6c8;
+  --sel: #7bb6c82e;
+
+  --diff-add: #62b48a;
+  --diff-add-bg: #62b48a1c;
+  --diff-mod: #d99a4a;
+  --diff-mod-bg: #d99a4a18;
+  --diff-del: #dd8c88;
+  --diff-del-bg: #dd8c8816;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--size-body);
+  line-height: var(--leading);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* The reader is a document, not an app surface: let the user select text. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.doc {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: var(--pad-top) var(--pad-x) var(--pad-bottom);
+  /* Guards against a long unbroken token (a URL, a base64 blob) forcing the
+     whole page to scroll sideways. */
+  overflow-wrap: break-word;
+}
+
+/* ---- headings ---- */
+.doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 {
+  font-family: var(--font-head);
+  line-height: 1.24;
+  text-wrap: balance;
+  margin: 1.9em 0 .55em;
+}
+.doc > :first-child { margin-top: 0; }
+
+.doc h1 { font-size: 1.62em; font-weight: 650; letter-spacing: -.016em; margin-top: 0; }
+.doc h2 { font-size: 1.26em; font-weight: 650; letter-spacing: -.009em; }
+.doc h3 { font-size: 1.08em; font-weight: 680; }
+.doc h4 { font-size: 1em;    font-weight: 700; }
+.doc h5 { font-size: .93em;  font-weight: 700; color: var(--fg-dim); }
+.doc h6 { font-size: .87em;  font-weight: 700; color: var(--fg-faint);
+          text-transform: uppercase; letter-spacing: .08em; }
+
+/* ---- flow ---- */
+.doc p { margin: 0 0 1.05em; }
+.doc ul, .doc ol { margin: 0 0 1.05em; padding-left: 1.4em; }
+.doc li { margin-bottom: .35em; }
+.doc li > ul, .doc li > ol { margin-top: .35em; margin-bottom: .35em; }
+.doc li::marker { color: var(--fg-faint); }
+
+.doc a { color: var(--accent); text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.doc strong { font-weight: 700; }
+.doc em { font-style: italic; }
+.doc del { color: var(--fg-faint); }
+
+.doc hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 2.2em 0;
+}
+
+.doc blockquote {
+  margin: 1.3em 0;
+  padding: 2px 0 2px 18px;
+  border-left: 2px solid var(--accent);
+  color: var(--fg-dim);
+}
+.doc blockquote > :last-child { margin-bottom: 0; }
+
+.doc img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+/* ---- code ---- */
+.doc code {
+  font-family: var(--font-mono);
+  font-size: var(--size-code);
+  background: var(--bg-sunken);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: .12em .38em;
+}
+
+.doc pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--bg-sunken);
+  border: 1px solid var(--rule-soft);
+  border-radius: 8px;
+  padding: 13px 15px;
+  margin: 1.25em 0;
+  /* On screen a code block scrolls rather than wrapping, so alignment-
+     sensitive output (tables, diffs, ASCII art) stays readable. Print
+     overrides this — paper cannot scroll. */
+  overflow-x: auto;
+  position: relative;
+}
+.doc pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+  white-space: pre;
+}
+
+/* Per-block copy button, injected by shell.js. */
+.doc .agentia-copy {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  color: var(--fg-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+.doc pre:hover .agentia-copy,
+.doc .agentia-copy:focus-visible { opacity: 1; }
+.doc .agentia-copy:hover { color: var(--fg); }
+.doc .agentia-copy[data-copied="true"] { color: var(--diff-add); border-color: var(--diff-add); }
+
+/* ---- tables ---- */
+.doc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.35em 0;
+  font-size: .86em;
+  font-variant-numeric: tabular-nums;
+}
+.doc th {
+  text-align: left;
+  font-weight: 650;
+  padding: 8px 11px;
+  border-bottom: 1.5px solid var(--rule);
+  color: var(--fg-dim);
+}
+.doc td {
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+.doc th[align="right"], .doc td[align="right"] { text-align: right; }
+.doc th[align="center"], .doc td[align="center"] { text-align: center; }
+
+/* A wide table gets its own scroll container rather than widening the page.
+   shell.js wraps every table in this. */
+.doc .agentia-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 1.35em 0;
+}
+.doc .agentia-scroll > table {
+  margin: 0;
+  /* Inside a scroll container the table takes its natural width and the
+     container scrolls. Leaving width:100% here would make a wide table squeeze
+     into the measure and wrap every cell instead — the container would be
+     present but never actually scroll. min-width keeps narrow tables aligned
+     to the text column. */
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Numeric columns are marked right-aligned by the GFM table extension.
+   Breaking "171 ms" across two lines makes a metrics table much harder to
+   scan, and these cells are short by nature. */
+.doc td[align="right"], .doc th[align="right"] { white-space: nowrap; }
+
+/* ---- task lists ---- */
+.doc li input[type="checkbox"] {
+  margin-right: .5em;
+  vertical-align: middle;
+  accent-color: var(--accent);
+}
+.doc ul:has(> li > input[type="checkbox"]) { list-style: none; padding-left: .35em; }
+
+/* ---- footnotes ---- */
+.doc .footnotes {
+  margin-top: 3em;
+  padding-top: 1.2em;
+  border-top: 1px solid var(--rule);
+  font-size: .88em;
+  color: var(--fg-dim);
+}
+.doc .footnotes ol { padding-left: 1.2em; }
+.doc a.footnote-ref { text-decoration: none; font-size: .82em; vertical-align: super; }
+
+/* ---- diff decorations, applied by shell.js from bootstrap data ---- */
+.doc .agentia-diff {
+  /* The bleed makes the tint reach past the text column without changing
+     layout, so blocks do not shift when diff mode toggles. */
+  box-shadow: -14px 0 0 var(--diff-tint), 14px 0 0 var(--diff-tint);
+  background: var(--diff-tint);
+  border-left: 2px solid var(--diff-edge);
+  padding-left: 12px;
+  margin-left: -14px;
+}
+.doc .agentia-diff-added    { --diff-tint: var(--diff-add-bg); --diff-edge: var(--diff-add); }
+.doc .agentia-diff-modified { --diff-tint: var(--diff-mod-bg); --diff-edge: var(--diff-mod); }
+
+/* ---- utility ---- */
+.doc .agentia-empty {
+  color: var(--fg-faint);
+  font-style: italic;
+  text-align: center;
+  padding: 4em 0;
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* =====================================================================
+   PRINT
+   Theme print.css sets @page size, margins and running heads. These rules
+   are the ones that must hold regardless of theme.
+   ===================================================================== */
+@media print {
+  html, body {
+    background: #fff;
+    color: #000;
+  }
+
+  .doc {
+    /* The page box provides the margin in print; the screen padding and
+       measure would double it up and waste the sheet. */
+    max-width: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Paper cannot scroll, so code must wrap. Without this, anything past the
+     right edge of the page is silently lost — the single most common defect
+     in Markdown-to-PDF output. */
+  .doc pre {
+    overflow: visible;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-radius: 0;
+    border: 1px solid #ccc;
+    background: #f7f7f5;
+    /* A long listing must be allowed to split across pages, or it disappears
+       entirely rather than merely breaking awkwardly. */
+    break-inside: auto;
+  }
+  .doc pre code { white-space: pre-wrap; }
+
+  .doc .agentia-copy { display: none; }
+
+  .doc .agentia-scroll { overflow: visible; }
+
+  /* Keep a heading with the text it introduces. */
+  .doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 {
+    break-after: avoid-page;
+    break-inside: avoid-page;
+  }
+
+  /* Small blocks should not straddle a page break; large ones must. */
+  .doc blockquote, .doc table { break-inside: avoid-page; }
+  .doc tr, .doc img { break-inside: avoid; }
+  .doc thead { display: table-header-group; }
+
+  .doc p, .doc li { orphans: 3; widows: 3; }
+
+  /* Show link targets on paper, where they cannot be clicked. Skip anchors
+     and links whose text already is the URL. */
+  .doc a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: .8em;
+    color: #555;
+    word-break: break-all;
+  }
+
+  /* Diff tints are a screen affordance; on paper they print as grey mud. */
+  .doc .agentia-diff {
+    box-shadow: none;
+    background: none;
+    border-left: 2px solid #999;
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "report",
+  "name": "Report",
+  "order": 2,
+  "description": "Sharing outward. Tight hierarchy, ruled tables, neutral grotesque.",
+  "prefersDarkAppearance": false,
+  "fonts": {
+    "body": "\"IBM Plex Sans\", -apple-system, \"SF Pro Text\", system-ui, sans-serif",
+    "heading": "\"IBM Plex Sans\", -apple-system, \"SF Pro Display\", system-ui, sans-serif",
+    "mono": "\"IBM Plex Mono\", \"SF Mono\", Menlo, ui-monospace, monospace"
+  },
+  "requiredFonts": [
+    "IBM Plex Sans",
+    "IBM Plex Mono"
+  ],
+  "page": {
+    "size": "Letter",
+    "margin": "0.9in"
+  }
+}

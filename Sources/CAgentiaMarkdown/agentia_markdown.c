@@ -30,6 +30,111 @@ static void register_extensions_once(void) {
   cmark_gfm_core_extensions_ensure_registered();
 }
 
+/* ---------------------------------------------------------------------
+ * Workaround: malformed footnote backref in swift-cmark's gfm branch.
+ *
+ * src/html.c:S_put_footnote_backref writes
+ *
+ *     ... aria-label="Back to reference 1↩</a>
+ *
+ * and never closes the attribute. Upstream github/cmark-gfm emits
+ * "\">↩</a>" correctly; Apple's fork dropped the "\">" on the single-backref
+ * path only (the multi-backref path 20 lines below is right). An unterminated
+ * attribute value swallows everything up to the next quote character, so a
+ * single footnote corrupts the remainder of the document — in Agentia's case
+ * it consumed the closing tags and the shell <script> along with them.
+ *
+ * The repair is a targeted byte fixup: find the exact prefix, skip the index
+ * (digits and hyphens), and if what follows is the U+21A9 arrow rather than
+ * the quote that should be there, insert the missing "\">".
+ *
+ * This is a no-op once the dependency is fixed, because the pattern stops
+ * matching — so it is safe to leave in place.
+ * ------------------------------------------------------------------- */
+
+static const char kBackrefPrefix[] = "aria-label=\"Back to reference ";
+#define BACKREF_PREFIX_LEN (sizeof(kBackrefPrefix) - 1)
+
+/* UTF-8 for U+21A9 LEFTWARDS ARROW WITH HOOK. */
+static const char kReturnArrow[] = "\xe2\x86\xa9";
+#define RETURN_ARROW_LEN (sizeof(kReturnArrow) - 1)
+
+/* Counts how many repairs the input needs, so we can skip allocation in the
+   overwhelmingly common case of a document with no footnotes. */
+static size_t count_broken_backrefs(const char *html, size_t len) {
+  size_t found = 0;
+  size_t i = 0;
+
+  while (i + BACKREF_PREFIX_LEN < len) {
+    const char *hit = memchr(html + i, 'a', len - i);
+    if (hit == NULL) break;
+    size_t at = (size_t)(hit - html);
+
+    if (at + BACKREF_PREFIX_LEN <= len &&
+        memcmp(html + at, kBackrefPrefix, BACKREF_PREFIX_LEN) == 0) {
+      size_t j = at + BACKREF_PREFIX_LEN;
+      while (j < len && ((html[j] >= '0' && html[j] <= '9') || html[j] == '-')) {
+        j++;
+      }
+      if (j + RETURN_ARROW_LEN <= len &&
+          memcmp(html + j, kReturnArrow, RETURN_ARROW_LEN) == 0) {
+        found++;
+      }
+      i = j;
+      continue;
+    }
+    i = at + 1;
+  }
+  return found;
+}
+
+static char *repair_footnote_backrefs(char *html) {
+  if (html == NULL) return NULL;
+
+  const size_t len = strlen(html);
+  const size_t broken = count_broken_backrefs(html, len);
+  if (broken == 0) {
+    return html;
+  }
+
+  /* Each repair inserts exactly two bytes: '"' and '>'. */
+  const size_t out_len = len + broken * 2;
+  char *out = (char *)malloc(out_len + 1);
+  if (out == NULL) {
+    /* Better to return the original than to lose the document entirely; the
+       page will be damaged but the caller still gets something. */
+    return html;
+  }
+
+  size_t r = 0; /* read cursor  */
+  size_t w = 0; /* write cursor */
+
+  while (r < len) {
+    if (html[r] == 'a' && r + BACKREF_PREFIX_LEN <= len &&
+        memcmp(html + r, kBackrefPrefix, BACKREF_PREFIX_LEN) == 0) {
+      memcpy(out + w, html + r, BACKREF_PREFIX_LEN);
+      w += BACKREF_PREFIX_LEN;
+      r += BACKREF_PREFIX_LEN;
+
+      while (r < len && ((html[r] >= '0' && html[r] <= '9') || html[r] == '-')) {
+        out[w++] = html[r++];
+      }
+
+      if (r + RETURN_ARROW_LEN <= len &&
+          memcmp(html + r, kReturnArrow, RETURN_ARROW_LEN) == 0) {
+        out[w++] = '"';
+        out[w++] = '>';
+      }
+      continue;
+    }
+    out[w++] = html[r++];
+  }
+
+  out[w] = '\0';
+  free(html);
+  return out;
+}
+
 static int cmark_options_from_flags(uint32_t flags) {
   /* CMARK_OPT_VALIDATE_UTF8 is unconditional: the input is a file that some
      other process wrote, so invalid sequences are a realistic case and cmark
@@ -104,7 +209,7 @@ char *agentia_md_to_html(const char *markdown, size_t length, uint32_t flags) {
   cmark_node_free(doc);
   cmark_parser_free(parser);
 
-  return html;
+  return repair_footnote_backrefs(html);
 }
 
 void agentia_md_free(char *html) {

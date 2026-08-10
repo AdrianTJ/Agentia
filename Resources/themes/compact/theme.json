@@ -1,0 +1,17 @@
+{
+  "id": "compact",
+  "name": "Compact",
+  "order": 5,
+  "description": "Long agent dumps on two pages instead of nine. Dense but still legible.",
+  "prefersDarkAppearance": false,
+  "fonts": {
+    "body": "-apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif",
+    "heading": "-apple-system, \"SF Pro Display\", \"Segoe UI\", system-ui, sans-serif",
+    "mono": "\"SF Mono\", Menlo, ui-monospace, monospace"
+  },
+  "requiredFonts": [],
+  "page": {
+    "size": "Letter",
+    "margin": "0.6in"
+  }
+}

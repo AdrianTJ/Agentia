@@ -1,0 +1,22 @@
+/* Editorial — Reading at length on paper. Wide margins, old-style figures, larger type.
+   Fonts degrade to system faces when the optional families are absent. */
+
+:root {
+  --measure: 62ch;
+  --size-body: 18.5px;
+  --leading: 1.74;
+  --accent: #6b4423;
+  --pad-top: 60px;
+  --font-body: Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-head: Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-mono: "SF Mono", Menlo, ui-monospace, monospace;
+}
+
+html[data-appearance="dark"] {
+  --accent: #c99a6b;
+}
+
+.doc { font-variant-numeric: oldstyle-nums; }
+.doc h1 { font-weight: 400; font-size: 1.9em; letter-spacing: -.012em; }
+.doc h2 { font-weight: 600; font-style: italic; }
+.doc blockquote { font-style: italic; border-left-width: 1px; }

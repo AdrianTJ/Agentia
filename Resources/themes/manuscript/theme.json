@@ -1,0 +1,20 @@
+{
+  "id": "manuscript",
+  "name": "Manuscript",
+  "order": 1,
+  "description": "Long prose reports. Generous leading, narrow measure, humanist type.",
+  "prefersDarkAppearance": false,
+  "fonts": {
+    "body": "\"iA Writer Quattro S\", \"iA Writer Quattro\", \"Iowan Old Style\", Charter, Georgia, serif",
+    "heading": "\"iA Writer Quattro S\", \"iA Writer Quattro\", \"Iowan Old Style\", Charter, Georgia, serif",
+    "mono": "\"iA Writer Mono S\", \"iA Writer Mono\", \"SF Mono\", Menlo, ui-monospace, monospace"
+  },
+  "requiredFonts": [
+    "iA Writer Quattro S",
+    "iA Writer Mono S"
+  ],
+  "page": {
+    "size": "Letter",
+    "margin": "1in"
+  }
+}

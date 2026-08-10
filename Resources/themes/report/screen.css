@@ -1,0 +1,20 @@
+/* Report — Sharing outward. Tight hierarchy, ruled tables, neutral grotesque.
+   Fonts degrade to system faces when the optional families are absent. */
+
+:root {
+  --measure: 70ch;
+  --size-body: 16px;
+  --leading: 1.62;
+  --accent: #1f4e6b;
+  --font-body: "IBM Plex Sans", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-head: "IBM Plex Sans", -apple-system, "SF Pro Display", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, ui-monospace, monospace;
+}
+
+html[data-appearance="dark"] {
+  --accent: #6fa8c9;
+}
+
+.doc h1 { letter-spacing: -.022em; font-weight: 700; }
+.doc h2 { text-transform: none; font-weight: 700; }
+.doc th { text-transform: uppercase; font-size: .88em; letter-spacing: .05em; }

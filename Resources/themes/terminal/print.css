@@ -1,0 +1,17 @@
+/* Terminal — print. @page controls sheet geometry; running heads
+   come from the host print pipeline, since no shipping browser
+   engine implements CSS @page margin boxes. */
+
+@page {
+  size: Letter;
+  margin: 0.7in;
+}
+
+@media print {
+  :root { --size-body: 8.6pt; }
+  :root { --leading: 1.45; }
+  :root { --measure: none; }
+
+  .doc pre { font-size: 7.4pt; }
+  .doc code { color: #333; }
+}
