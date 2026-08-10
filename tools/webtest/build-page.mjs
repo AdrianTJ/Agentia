@@ -95,11 +95,17 @@ export function escapeForHTMLText(value) {
  * remainder is parsed as markup. Escaping the forward slash is valid JSON and
  * keeps the payload inert.
  */
+/**
+ * Make JSON safe to embed in a <script> block by escaping every "<" as \u003c.
+ *
+ * The parsed value is unchanged, but no "</script" can appear in the source
+ * text. Escaping the "<" rather than inserting a backslash before the "/" also
+ * covers "<!--<script", which pushes HTML's tokenizer into the double-escaped
+ * state where the block's own </script> no longer closes it — and unlike a
+ * "<\\!--" style escape, this stays valid JSON.
+ */
 export function neutraliseClosingScriptTags(json) {
-  // Case is preserved: the sequence lives inside a JSON string value, so
-  // rewriting "</SCRIPT" as "<\\/script" would change the data as well as
-  // neutralising the tag.
-  return json.replace(/<\/(script)/gi, (m) => "<\\" + m.slice(1));
+  return json.replace(/</g, "\\u003c");
 }
 
 export function bootstrapJSON(config) {

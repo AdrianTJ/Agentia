@@ -21,8 +21,19 @@ public enum MarkdownRenderer {
         /// Curly quotes and dashes. Off by default: a review tool should not
         /// silently rewrite the characters the reader is checking.
         public static let smartPunctuation = Options(rawValue: AGENTIA_MD_SMART)
+        /// Escape html/head/body/main/meta/base so a document cannot close the
+        /// container it is embedded in or navigate the view away.
+        public static let neutraliseStructuralTags =
+            Options(rawValue: AGENTIA_MD_NEUTRALISE_STRUCTURAL)
+        /// Blank YAML/TOML front matter, preserving line numbers so the diff
+        /// view stays aligned.
+        public static let stripFrontMatter =
+            Options(rawValue: AGENTIA_MD_STRIP_FRONT_MATTER)
 
-        public static let `default`: Options = [.sourcePositions, .rawHTML, .footnotes]
+        public static let `default`: Options = [
+            .sourcePositions, .rawHTML, .footnotes,
+            .neutraliseStructuralTags, .stripFrontMatter,
+        ]
     }
 
     public enum Error: Swift.Error, Equatable {
@@ -34,6 +45,11 @@ public enum MarkdownRenderer {
 
     /// Largest input the renderer accepts, mirroring `AGENTIA_MD_MAX_INPUT`.
     public static let maximumInputBytes = Int(AGENTIA_MD_MAX_INPUT)
+
+    /// Deepest block nesting accepted, mirroring `AGENTIA_MD_MAX_DEPTH`.
+    /// Beyond this the renderer refuses rather than handing the layout engine
+    /// work that grows quadratically with depth.
+    public static let maximumNestingDepth = Int(AGENTIA_MD_MAX_DEPTH)
 
     /// The cmark-gfm version actually linked in, e.g. `"0.29.0.gfm.13"`.
     public static var cmarkVersion: String {

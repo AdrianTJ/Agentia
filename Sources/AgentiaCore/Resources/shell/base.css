@@ -243,7 +243,11 @@ body {
   vertical-align: middle;
   accent-color: var(--accent);
 }
-.doc ul:has(> li > input[type="checkbox"]) { list-style: none; padding-left: .35em; }
+/* Task lists lose their bullets but keep list indentation: dropping to a
+   near-zero padding made each nesting level advance about 6px instead of 24,
+   so a multi-level checklist read as flat. */
+.doc ul:has(> li > input[type="checkbox"]) { list-style: none; }
+.doc > ul:has(> li > input[type="checkbox"]) { padding-left: .55em; }
 
 /* ---- footnotes ---- */
 .doc .footnotes {
@@ -320,7 +324,33 @@ body {
 
   .doc .agentia-copy { display: none; }
 
+  /* Paper cannot scroll, so a table must shrink to the sheet instead of
+     keeping the natural width it uses on screen. Without the width reset the
+     scroll container stops scrolling but the table still overflows, and every
+     column past the right edge is silently dropped from the PDF — invisible on
+     screen, because there the container hides it. */
   .doc .agentia-scroll { overflow: visible; }
+  .doc .agentia-scroll > table { width: 100%; min-width: 0; }
+  .doc table { table-layout: auto; }
+  .doc td, .doc th {
+    /* Long tokens in a cell must wrap rather than push the table wider. */
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  /* Right-aligned cells stay unbroken on screen for scannability, but on paper
+     fitting the sheet matters more. */
+  .doc td[align="right"], .doc th[align="right"] { white-space: normal; }
+
+  /* A table taller than a sheet must be allowed to split, or avoid-page leaves
+     a blank page and pushes the whole table to the next one. */
+  .doc table { break-inside: auto; }
+
+  /* A collapsed <details> prints as just its summary, so the log output and
+     stack traces agents put inside them vanish from the PDF — and on paper
+     there is no way to expand one. The `open` attribute is added by shell.js
+     before printing, because CSS cannot reveal the content: the UA hides the
+     slot rather than setting display:none on the children. */
+  .doc summary { font-weight: 650; }
 
   /* Keep a heading with the text it introduces. */
   .doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 {
@@ -337,7 +367,7 @@ body {
 
   /* Show link targets on paper, where they cannot be clicked. Skip anchors
      and links whose text already is the URL. */
-  .doc a[href^="http"]::after {
+  .doc a[href^="http"]:not([data-agentia-self-link])::after {
     content: " (" attr(href) ")";
     font-size: .8em;
     color: #555;

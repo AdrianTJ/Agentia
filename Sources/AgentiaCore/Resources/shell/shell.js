@@ -148,6 +148,67 @@
     }
   }
 
+  /* ---------- self-describing links ---------- */
+
+  /* Print appends the href after a link so it is reachable on paper. For an
+     autolinked bare URL — which GFM produces constantly in agent output — that
+     prints the same URL twice. Mark those so the print stylesheet can skip
+     them; CSS alone cannot compare text to an attribute. */
+  function markSelfLinks() {
+    var links = doc.querySelectorAll("a[href]");
+    for (var i = 0; i < links.length; i++) {
+      var link = links[i];
+      var text = (link.textContent || "").trim();
+      var href = link.getAttribute("href") || "";
+      if (text === href || text === href.replace(/\/$/, "")) {
+        link.setAttribute("data-agentia-self-link", "");
+      }
+    }
+  }
+
+  /* ---------- printing ---------- */
+
+  /* Expand every collapsed <details> for print and restore afterwards.
+     Agent Markdown puts logs, stack traces and full command output inside
+     them, and on paper a collapsed block is simply lost content. */
+  function expandDetailsForPrint() {
+    var reopened = [];
+
+    function expand() {
+      reopened = [];
+      var blocks = doc.querySelectorAll("details:not([open])");
+      for (var i = 0; i < blocks.length; i++) {
+        blocks[i].setAttribute("open", "");
+        reopened.push(blocks[i]);
+      }
+    }
+
+    function restore() {
+      for (var i = 0; i < reopened.length; i++) {
+        reopened[i].removeAttribute("open");
+      }
+      reopened = [];
+    }
+
+    window.addEventListener("beforeprint", expand);
+    window.addEventListener("afterprint", restore);
+
+    /* Also react to the media type changing directly, which is how a
+       headless PDF render and the print-preview path behave. */
+    if (window.matchMedia) {
+      var query = window.matchMedia("print");
+      var onChange = function (event) {
+        if (event.matches) { expand(); } else { restore(); }
+      };
+      if (query.addEventListener) {
+        query.addEventListener("change", onChange);
+      } else if (query.addListener) {
+        query.addListener(onChange);
+      }
+      if (query.matches) expand();
+    }
+  }
+
   /* ---------- outline ---------- */
 
   function buildOutline() {
@@ -219,6 +280,8 @@
 
   wrapTables();
   addCopyButtons();
+  markSelfLinks();
+  expandDetailsForPrint();
   applyDiff(config.diffRanges);
   interceptLinks();
   watchScroll();

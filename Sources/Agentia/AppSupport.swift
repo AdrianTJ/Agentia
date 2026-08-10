@@ -67,7 +67,7 @@ enum Clipboard {
         pasteboard.setString(source, forType: .string)
 
         guard kind == .markdown,
-              let html = try? MarkdownRenderer.renderHTML(source, options: [.rawHTML, .footnotes])
+              let html = try? MarkdownRenderer.renderHTML(source, options: MarkdownRenderer.Options.default)
         else { return }
 
         pasteboard.setString(html, forType: .html)

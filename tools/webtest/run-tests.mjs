@@ -72,6 +72,7 @@ async function main() {
     await testPrintAndPDF(browser, fragment, themes);
     await testDarkAppearance(browser, fragment);
     await testHTMLArtifactProfile(browser);
+    await testDocumentCannotNavigate(browser);
   } finally {
     await browser.close();
   }
@@ -312,24 +313,52 @@ async function testPrintAndPDF(browser, fragment, themes) {
     // The defect this guards against: a long code line running past the right
     // edge of the sheet and being silently dropped from the PDF.
     const printMetrics = await page.evaluate(() => {
+      const over = (el) => el.scrollWidth - el.clientWidth;
+
       const pres = [...document.querySelectorAll("#agentia-doc pre")];
       const clipped = pres
-        .map((p, i) => ({ i, over: p.scrollWidth - p.clientWidth }))
+        .map((p, i) => ({ what: "pre" + i, over: over(p) }))
         .filter((r) => r.over > 1);
+
+      // Tables were the real gap: the print rules reset the container's
+      // overflow but not the table's max-content width, so a wide table ran
+      // off the sheet and every column past the edge was dropped from the PDF.
+      const wraps = [...document.querySelectorAll("#agentia-doc .agentia-scroll")];
+      const clippedTables = wraps
+        .map((w, i) => ({ what: "table" + i, over: over(w) }))
+        .filter((r) => r.over > 1);
+
       const style = pres.length ? getComputedStyle(pres[0]) : null;
       const copyVisible = [...document.querySelectorAll(".agentia-copy")]
         .some((b) => getComputedStyle(b).display !== "none");
+
+      // A collapsed <details> must print its body: on paper there is no way
+      // to expand it, and agents put logs and stack traces in them.
+      const collapsed = [...document.querySelectorAll("#agentia-doc details:not([open])")];
+      const hiddenBodies = collapsed.filter((d) => {
+        const body = [...d.children].find((c) => c.tagName !== "SUMMARY");
+        return body ? getComputedStyle(body).display === "none" : false;
+      }).length;
+
       return {
         preCount: pres.length,
-        clipped,
+        tableCount: wraps.length,
+        clipped, clippedTables, hiddenBodies,
         whiteSpace: style ? style.whiteSpace : null,
         copyVisible,
       };
     });
 
+    ok(printMetrics.preCount > 0, `${theme.id}: fixture has code blocks`);
+    ok(printMetrics.tableCount > 0, `${theme.id}: fixture has tables`);
     ok(printMetrics.clipped.length === 0,
        `${theme.id}: no code block is clipped in print`,
        JSON.stringify(printMetrics.clipped));
+    ok(printMetrics.clippedTables.length === 0,
+       `${theme.id}: no table is clipped in print`,
+       JSON.stringify(printMetrics.clippedTables));
+    ok(printMetrics.hiddenBodies === 0,
+       `${theme.id}: collapsed <details> bodies are expanded in print`);
     ok(printMetrics.whiteSpace === "pre-wrap",
        `${theme.id}: code wraps in print`, `white-space=${printMetrics.whiteSpace}`);
     ok(!printMetrics.copyVisible,
@@ -390,6 +419,10 @@ const PDF_CONTENT_MARKERS = [
   "Pro Git corpus",
   "And no reranker change can fix it",
   "latency_p99=percentile(latencies, 99)",
+  // Inside a collapsed <details>, which used to be dropped entirely.
+  "Agent Markdown uses this constantly",
+  // The last column of the wide table, which used to run off the sheet.
+  "retrieval",
 ];
 
 async function extractPDFText(path) {
@@ -496,6 +529,95 @@ async function testHTMLArtifactProfile(browser) {
   ok(!imgLoaded, "remote image did not load");
   ok(blocked.some((u) => u.startsWith("https://remote.test")),
      "remote image request was actively blocked", blocked.join(", "));
+
+  await page.close();
+}
+
+/* ---------- 8. navigation ---------- */
+
+async function testDocumentCannotNavigate(browser) {
+  console.log("navigation containment");
+
+  // CSP does not govern top-level navigation, and tagfilter does not cover
+  // <meta>. Without neutralisation a Markdown document could navigate the view
+  // to an arbitrary URL — which both issues a request and replaces the page
+  // with attacker-controlled content on the attacker's origin.
+  const md = join(OUT, "nav-fixture.md");
+  writeFileSync(md, [
+    "# Quarterly report",
+    "",
+    '<meta http-equiv="refresh" content="0; url=http://127.0.0.1:9/EXFIL">',
+    '<base href="http://127.0.0.1:9/">',
+    "",
+    "Body text the reader expected.",
+    "",
+  ].join("\n"));
+
+  const fragment = renderMarkdown(md);
+  ok(!fragment.includes("<meta"), "renderer neutralises <meta> in Markdown");
+  ok(!fragment.includes("<base"), "renderer neutralises <base> in Markdown");
+
+  const page = await browser.newPage();
+  const navigations = [];
+  page.on("framenavigated", (frame) => navigations.push(frame.url()));
+
+  await page.setContent(
+    buildPage({ content: fragment, themeId: "report", title: "Nav" }),
+    { waitUntil: "load" }
+  );
+  await page.waitForTimeout(700);
+
+  const escaped = navigations.filter((u) => u.startsWith("http://127.0.0.1:9"));
+  ok(escaped.length === 0, "document did not navigate the view away",
+     escaped.join(", "));
+
+  const intact = await page.evaluate(() => ({
+    hasDoc: !!document.getElementById("agentia-doc"),
+    docCount: document.querySelectorAll("#agentia-doc").length,
+    bodyKids: [...document.body.children].map((e) => e.tagName).join(","),
+  }));
+  ok(intact.hasDoc, "the document container survived");
+
+  // A bare </main> used to close the container, leaving everything after it a
+  // sibling of <body> — enough to paint a full-window overlay with no script.
+  const breakout = join(OUT, "breakout-fixture.md");
+  writeFileSync(breakout, [
+    "# Innocent report",
+    "",
+    "</main>",
+    "",
+    '<div style="position:fixed;inset:0;background:#c00;z-index:99999">PWNED</div>',
+    "",
+    '<main id="agentia-doc" class="doc">',
+    "",
+    "## Fake continuation",
+    "",
+  ].join("\n"));
+
+  const breakoutFragment = renderMarkdown(breakout);
+  await page.setContent(
+    buildPage({ content: breakoutFragment, themeId: "report", title: "Breakout" }),
+    { waitUntil: "load" }
+  );
+  await page.waitForTimeout(250);
+
+  const after = await page.evaluate(() => {
+    const overlays = [...document.body.children].filter(
+      (e) => e.id !== "agentia-doc" && e.tagName === "DIV"
+    );
+    return {
+      docCount: document.querySelectorAll("#agentia-doc").length,
+      strayOverlays: overlays.length,
+      headingsFound: document.querySelectorAll("#agentia-doc h2").length,
+    };
+  });
+
+  ok(after.docCount === 1, "exactly one document container exists",
+     `found ${after.docCount}`);
+  ok(after.strayOverlays === 0, "no element escaped the container",
+     `${after.strayOverlays} stray`);
+  ok(after.headingsFound >= 1,
+     "content after the breakout attempt stays inside the container");
 
   await page.close();
 }

@@ -14,4 +14,8 @@
 
   .doc pre { font-size: 7.4pt; }
   .doc code { color: #333; }
+  /* Monospace "1. " needs more room than the shared indent allows, and with
+     .doc padding removed in print the marker landed at negative x and was
+     sliced by the page edge. */
+  .doc ol, .doc ul { padding-left: 2.4em; }
 }

@@ -137,31 +137,21 @@ public struct RenderShell: Sendable {
         return neutraliseClosingScriptTags(json)
     }
 
+    /// Make JSON safe to embed in a `<script>` block by escaping every `<`
+    /// as `\u003c`.
+    ///
+    /// The parsed value is unchanged — `\u003c` is `<` — but no `</script`
+    /// can appear in the source text, so the block cannot be closed early.
+    ///
+    /// An earlier version inserted a backslash before the `/`, which works for
+    /// `</script` because `\/` is a legal JSON escape. Extending that trick to
+    /// `<!--<script` (which pushes HTML's tokenizer into the double-escaped
+    /// state, where the block's own `</script>` stops closing it) produced
+    /// `<\!--`, and `\!` is *not* a legal escape — the payload became
+    /// unparseable JSON. Escaping the `<` handles every such sequence at once
+    /// and stays valid.
     static func neutraliseClosingScriptTags(_ json: String) -> String {
-        // Matches "</script" case-insensitively and inserts a backslash after
-        // the "<". The matched text is reused verbatim so case is preserved:
-        // the sequence sits inside a JSON string value, and rewriting
-        // "</SCRIPT" as "<\/script" would alter the data as well as
-        // neutralising the tag.
-        let needleLength = 8 // "</script"
-        var out = ""
-        out.reserveCapacity(json.count)
-        var index = json.startIndex
-
-        while index < json.endIndex {
-            if json[index] == "<",
-               let end = json.index(index, offsetBy: needleLength, limitedBy: json.endIndex),
-               json[index..<end].lowercased() == "</script" {
-                out.append("<")
-                out.append("\\")
-                out += json[json.index(after: index)..<end]
-                index = end
-            } else {
-                out.append(json[index])
-                index = json.index(after: index)
-            }
-        }
-        return out
+        json.replacingOccurrences(of: "<", with: "\\u003c")
     }
 
     static func escapeForHTMLText(_ value: String) -> String {

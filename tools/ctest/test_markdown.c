@@ -169,6 +169,16 @@ static void test_footnote_backref_repair(void) {
                  "prose resembling the pattern is untouched");
   agentia_md_free(h);
 
+  /* Raw HTML the author wrote must not be rewritten. The repair used to match
+     on the aria-label alone and would inject "> mid-attribute, closing the tag
+     early and spilling the rest into the page as text. */
+  h = render_default(
+      "<span aria-label=\"Back to reference 1\xe2\x86\xa9 and more\">visible</span>\n");
+  check_contains(h, "and more", "author raw HTML is not truncated by the repair");
+  check_absent(h, "1\">\xe2\x86\xa9 and more",
+               "no quote is injected into author markup");
+  agentia_md_free(h);
+
   /* A document with no footnotes must take the zero-copy path unharmed. */
   h = render_default("# Plain\n\nNothing to repair.\n");
   check_contains(h, "Nothing to repair", "documents without footnotes are unchanged");
@@ -206,6 +216,161 @@ static void test_output_is_well_formed(void) {
 
     agentia_md_free(h);
   }
+}
+
+/* A fragment embedded in a host page must not be able to close the host's
+   container or navigate the view. tagfilter covers the GFM blocklist only. */
+static void test_structural_neutralisation(void) {
+  printf("structural tag neutralisation\n");
+
+  char *h = render_default("# Hi\n\n</main>\n\n<div>overlay</div>\n");
+  check_absent(h, "</main>", "closing main tag is neutralised");
+  check_contains(h, "&lt;/main", "closing main tag becomes visible text");
+  check_contains(h, "<div>", "ordinary raw HTML still passes through");
+  agentia_md_free(h);
+
+  h = render_default("<main id=\"agentia-doc\">fake</main>\n");
+  check_absent(h, "<main", "opening main tag is neutralised");
+  agentia_md_free(h);
+
+  /* CSP does not govern top-level navigation, so a meta refresh would
+     genuinely navigate the view away from the document. */
+  h = render_default("<meta http-equiv=\"refresh\" content=\"0; url=http://evil\">\n");
+  check_absent(h, "<meta", "meta refresh is neutralised");
+  check_contains(h, "&lt;meta", "meta tag becomes visible text");
+  agentia_md_free(h);
+
+  h = render_default("<base href=\"http://evil/\">\n");
+  check_absent(h, "<base", "base tag is neutralised");
+  agentia_md_free(h);
+
+  h = render_default("<html><head></head><body>x</body></html>\n");
+  check_absent(h, "<html", "html tag is neutralised");
+  check_absent(h, "<body", "body tag is neutralised");
+  agentia_md_free(h);
+
+  /* A tag name must be followed by a delimiter, so ordinary words survive. */
+  h = render_default("The <mainstay> of the argument.\n");
+  check_contains(h, "<mainstay>", "a longer tag name is not mistaken for main");
+  agentia_md_free(h);
+
+  h = render_default("Discussing metadata and the main point.\n");
+  check_contains(h, "metadata and the main point",
+                 "prose containing the words is untouched");
+  agentia_md_free(h);
+
+  /* Opt-out must work, for callers embedding into a full document. */
+  h = render("</main>\n", AGENTIA_MD_UNSAFE_HTML);
+  check_contains(h, "</main>", "neutralisation is off when the flag is clear");
+  agentia_md_free(h);
+}
+
+/* Guards the layout engine rather than the parser. cmark handles absurd
+   nesting quickly; laying it out is quadratic and never finishes. */
+static void test_nesting_depth_cap(void) {
+  printf("nesting depth cap\n");
+
+  /* Well under the cap: must render. */
+  size_t shallow = 40;
+  char *doc = (char *)malloc(shallow + 16);
+  memset(doc, '>', shallow);
+  memcpy(doc + shallow, " quoted\n", 9);
+  char *h = agentia_md_to_html(doc, strlen(doc), AGENTIA_MD_DEFAULT_FLAGS);
+  check(h != NULL, "40 levels of nesting still renders");
+  agentia_md_free(h);
+  free(doc);
+
+  /* Far past the cap: must be refused, and quickly. */
+  size_t deep = 200000;
+  char *bomb = (char *)malloc(deep + 2);
+  memset(bomb, '>', deep);
+  bomb[deep] = '\n';
+  bomb[deep + 1] = '\0';
+
+  double t0 = now_ms();
+  h = agentia_md_to_html(bomb, deep + 1, AGENTIA_MD_DEFAULT_FLAGS);
+  double dt = now_ms() - t0;
+
+  check(h == NULL, "a 200k-deep blockquote bomb is rejected");
+  printf("        rejected in %.1f ms\n", dt);
+  check(dt < 5000.0, "rejection is fast, not a hang");
+  agentia_md_free(h);
+  free(bomb);
+
+  /* A large but shallow document must not be caught by the depth check —
+     the counter used to increment per text node and never come back down. */
+  const char *unit = "## Head\n\nSome prose with `code`.\n\n";
+  size_t unit_len = strlen(unit);
+  size_t reps = (512 * 1024) / unit_len;
+  char *wide = (char *)malloc(unit_len * reps + 1);
+  for (size_t i = 0; i < reps; i++) memcpy(wide + i * unit_len, unit, unit_len);
+  wide[unit_len * reps] = '\0';
+
+  h = agentia_md_to_html(wide, unit_len * reps, AGENTIA_MD_DEFAULT_FLAGS);
+  check(h != NULL, "a large but shallow document is not mistaken for deep");
+  agentia_md_free(h);
+  free(wide);
+}
+
+/* The most common shape of agent-written Markdown. Unhandled, CommonMark reads
+   it as a thematic break plus a setext heading, so the reader gets a rule and
+   then the raw metadata as a large bold heading above the real title. */
+static void test_front_matter(void) {
+  printf("front matter\n");
+
+  const char *doc =
+      "---\n"
+      "title: Incident Review\n"
+      "date: 2026-08-07\n"
+      "tags: [incident, postmortem]\n"
+      "---\n"
+      "\n"
+      "# Incident Review\n"
+      "\n"
+      "Body.\n";
+
+  char *h = render_default(doc);
+  check_absent(h, "<hr", "no stray thematic break");
+  check_absent(h, "title: Incident Review", "metadata is not rendered as content");
+  check_absent(h, "postmortem", "metadata values are not rendered");
+  check_contains(h, "<h1", "the real title still renders");
+  check_contains(h, "Body.", "the body still renders");
+
+  /* Line numbering must be preserved or every diff highlight shifts. The
+     heading is on line 7 of the original file. */
+  check_contains(h, "data-sourcepos=\"7:1-7:17\"",
+                 "source positions still match the original file");
+  agentia_md_free(h);
+
+  /* TOML fences too. */
+  h = render_default("+++\ntitle = \"x\"\n+++\n\n# Real\n");
+  check_absent(h, "title =", "TOML front matter is stripped");
+  check_contains(h, "<h1", "title after TOML front matter renders");
+  agentia_md_free(h);
+
+  /* "..." closes a YAML block. */
+  h = render_default("---\na: 1\n...\n\n# Real\n");
+  check_absent(h, "a: 1", "YAML block closed with ... is stripped");
+  agentia_md_free(h);
+
+  /* A thematic break that is not front matter must survive. */
+  h = render_default("# Title\n\n---\n\nAfter.\n");
+  check_contains(h, "<hr", "an ordinary thematic break is untouched");
+  agentia_md_free(h);
+
+  /* An unterminated block is ordinary content, not front matter. */
+  h = render_default("---\ntitle: x\n\n# Real\n");
+  check_contains(h, "title: x", "an unclosed block is left as content");
+  agentia_md_free(h);
+
+  /* A document that merely starts with a rule is not front matter. */
+  h = render_default("---\n\n# Real\n");
+  check_contains(h, "<hr", "a leading rule with no block is a rule");
+  agentia_md_free(h);
+
+  h = render("---\ntitle: x\n---\n\n# Real\n", AGENTIA_MD_UNSAFE_HTML);
+  check_contains(h, "title: x", "stripping is off when the flag is clear");
+  agentia_md_free(h);
 }
 
 static void test_sourcepos(void) {
@@ -423,6 +588,9 @@ int main(void) {
   test_basics();
   test_gfm_extensions();
   test_footnote_backref_repair();
+  test_structural_neutralisation();
+  test_front_matter();
+  test_nesting_depth_cap();
   test_output_is_well_formed();
   test_sourcepos();
   test_raw_html_and_tagfilter();

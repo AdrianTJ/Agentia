@@ -116,12 +116,27 @@ final class RenderShellTests: XCTestCase {
         }
     }
 
-    func testBootstrapCannotCloseItsOwnScriptBlock() {
-        // A document whose diff payload contained "</script>" would otherwise
-        // end the JSON block and have the remainder parsed as markup.
-        let json = RenderShell.neutraliseClosingScriptTags(#"{"x":"</script><b>"}"#)
-        XCTAssertFalse(json.contains("</script"))
-        XCTAssertTrue(json.contains(#"<\/script"#))
+    func testBootstrapCannotCloseItsOwnScriptBlock() throws {
+        // A payload containing "</script>" would otherwise end the JSON block
+        // and have the remainder parsed as markup. "<!--<script" is just as
+        // dangerous: it pushes the tokenizer into the double-escaped state,
+        // where the block's own </script> stops closing it.
+        for hostile in ["</script><b>", "<!--<script>", "</SCRIPT >"] {
+            let source = #"{"x":"\#(hostile)"}"#
+            let escaped = RenderShell.neutraliseClosingScriptTags(source)
+
+            XCTAssertFalse(escaped.lowercased().contains("</script"),
+                           "for: \(hostile)")
+            XCTAssertFalse(escaped.lowercased().contains("<!--<script"),
+                           "for: \(hostile)")
+
+            // Escaping must not corrupt the payload: it has to remain valid
+            // JSON that decodes to exactly the original value.
+            let decoded = try JSONSerialization.jsonObject(
+                with: Data(escaped.utf8)) as? [String: String]
+            XCTAssertEqual(decoded?["x"], hostile,
+                           "escaped JSON must round-trip unchanged")
+        }
     }
 
     func testTitleIsEscaped() throws {

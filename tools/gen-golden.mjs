@@ -56,6 +56,10 @@ const golden = {
     '{"a":"</scr"}',
     '{"a":"no tags"}',
     '{"a":"</script></script>"}',
+    // Moves the script-data tokenizer into the double-escaped state, where the
+    // block's own </script> no longer closes it.
+    '{"a":"<!--<script>"}',
+    '{"a":"<!--<SCRIPT"}',
   ].map((input) => ({ input, expected: neutraliseClosingScriptTags(input) })),
 };
 
