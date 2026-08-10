@@ -15,8 +15,9 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const ROOT = join(HERE, "..", "..");
-const SHELL_DIR = join(ROOT, "Resources", "shell");
-const THEME_DIR = join(ROOT, "Resources", "themes");
+const RES = join(ROOT, "Sources", "AgentiaCore", "Resources");
+const SHELL_DIR = join(RES, "shell");
+const THEME_DIR = join(RES, "themes");
 
 /** Document trust profiles. See docs/technical-proposal.html §05. */
 export const Profile = {
@@ -81,7 +82,7 @@ export function themeCSS(themeId) {
   return screen + "\n" + print;
 }
 
-function escapeForHTMLText(value) {
+export function escapeForHTMLText(value) {
   return String(value).replace(/[&<>]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])
   );
@@ -94,8 +95,15 @@ function escapeForHTMLText(value) {
  * remainder is parsed as markup. Escaping the forward slash is valid JSON and
  * keeps the payload inert.
  */
+export function neutraliseClosingScriptTags(json) {
+  // Case is preserved: the sequence lives inside a JSON string value, so
+  // rewriting "</SCRIPT" as "<\\/script" would change the data as well as
+  // neutralising the tag.
+  return json.replace(/<\/(script)/gi, (m) => "<\\" + m.slice(1));
+}
+
 export function bootstrapJSON(config) {
-  return JSON.stringify(config ?? {}).replace(/<\/(script)/gi, "<\\/$1");
+  return neutraliseClosingScriptTags(JSON.stringify(config ?? {}));
 }
 
 /**
