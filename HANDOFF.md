@@ -108,7 +108,72 @@ is by design. Do not delete it without checking the linked version.
 
 ---
 
-## 4. What to do, in order
+## 4. Open decision: why there is C, and whether it should stay
+
+**Do not read the C layer as a considered language choice.** It was not one, and you should
+know that before building on it.
+
+`Sources/CAgentiaMarkdown/` is 439 lines of C. It exists because of two forces, only one of
+which is a real engineering reason:
+
+1. cmark-gfm **is** a C library, so something has to cross a C boundary regardless.
+2. The previous session had no Swift toolchain, and needed the parsing core to be testable
+   *somewhere*. clang was available, so the logic went where it could be verified.
+
+Rust was also installed on that machine (`/root/.cargo/bin/cargo`) and was never checked for.
+That is a gap in the process, not a conclusion about Rust.
+
+### The 439 lines are two different things
+
+| Part | Roughly | Why it is C |
+|---|---|---|
+| FFI over cmark — parser lifecycle, extension registration, render, tree walk | ~150 lines | Legitimate. The boundary has to exist. |
+| Byte manipulation — footnote repair, structural tag escaping, front-matter blanking | ~250 lines | **Accident of environment.** Pure string processing that happens to live in C because that is where it could be tested. |
+
+The second block holds every raw `malloc`/`memcpy`/`memcmp` in the project — hand-rolled
+buffer arithmetic, which is the classic overflow shape. It was audited (ASan, UBSan,
+LeakSanitizer, and a 300k-iteration structured fuzz run, all clean), but that is mitigation,
+not absence of risk.
+
+### Recommended: move the byte manipulation to Swift, keep the FFI in C
+
+You have a Swift toolchain; the constraint that put that code in C is gone. Moving
+`repair_footnote_backrefs`, `neutralise_structural_tags` and the front-matter pass into
+`AgentiaCore` makes them bounds-checked and considerably easier to read, and shrinks the C to
+thin FFI with essentially no unsafe surface.
+
+Two things to preserve if you do this:
+
+- The front-matter pass must keep **blanking with spaces rather than removing**, or source
+  positions shift and the diff view misaligns (invariant 4 above).
+- Port the C tests rather than dropping them. They currently pin the footnote repair against
+  the paths it must *not* touch, which is the part most likely to regress.
+
+### When Rust becomes the right answer
+
+Not as a shim language — as a **parser replacement**. Swapping cmark-gfm for comrak (the Rust
+cmark-gfm-compatible implementation) would remove three things this codebase currently carries:
+
+- The malformed footnote backref, which is Apple's fork diverging from upstream and would not
+  follow you
+- cmark-gfm's quadratic-blowup CVE history, which is why the depth and output caps exist
+- Every raw memory operation in the parse path
+
+The cost is real and permanent: **SwiftPM cannot build Rust.** You would need a prebuilt static
+library, a hand-written C header, universal-binary handling for arm64 and x86_64, and a build
+step living outside `swift build` — ongoing friction in a project whose thesis is few moving
+parts. Performance is not the tiebreaker; parsing is 0.46 ms for 10 KB and comrak is in the
+same class. (Comrak's own edge-case behaviour has not been evaluated here — assume it has
+different quirks, not none.)
+
+**Suggested trigger:** if the footnote workaround ever needs a second workaround beside it,
+that is cmark-gfm's fork telling you it is a liability, and the switch earns its build
+complexity. Better decided early than after more code depends on the current shim's API.
+
+Either path stays open: the C tests are written against the shim's three-function interface,
+and the browser suite only shells out to the CLI, so both port largely intact.
+
+## 5. What to do, in order
 
 ### Phase 0 — the measurement gate (do this before building features)
 
@@ -133,6 +198,8 @@ Report the number. It changes what is worth building next.
 
 ### Then, in priority order
 
+0. **Settle the C question** (§4). Cheap to do early, expensive to defer — the byte-manipulation
+   passes should probably move to Swift now that a toolchain exists.
 1. **HTML artifacts render as authored.** Currently they are spliced into the shell's
    `<main class="doc">`, so a self-contained dashboard gets clamped to a 68ch measure, has its
    `<pre>` colours overridden by `.doc pre`, and gets a light-themed Copy button injected into
@@ -159,7 +226,7 @@ Report the number. It changes what is worth building next.
 
 ---
 
-## 5. Traps specific to this codebase
+## 6. Traps specific to this codebase
 
 - **`Bundle.module` and the app bundle.** SwiftPM emits resources as a `.bundle` beside the
   binary; `tools/make-app.sh` copies it into `Contents/Resources`. `Contents/MacOS` looks
@@ -184,7 +251,7 @@ Report the number. It changes what is worth building next.
 
 ---
 
-## 6. Conventions
+## 7. Conventions
 
 - Branch: `claude/agentia-mvp-implementation`. Eight commits, all green on the runnable suites.
 - Commits are authored as **Adrian Tame Jacobo `<adrian.tame.jacobo@gmail.com>`** with
@@ -194,7 +261,7 @@ Report the number. It changes what is worth building next.
   those are worth more than the code around them.
 - No new dependencies without a reason. The whole app is AppKit, WebKit, and one C library.
 
-## 7. Design references
+## 8. Design references
 
 | File | What it is |
 |---|---|
