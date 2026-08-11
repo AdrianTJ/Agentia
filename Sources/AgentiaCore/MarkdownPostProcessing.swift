@@ -202,34 +202,64 @@ enum CodeHighlighting {
 
     private static let opener = "<code class=\"language-"
 
-    static func apply(to html: String) -> String {
+    static func apply(to html: String, maxOutputBytes: Int = .max) -> String {
         guard html.contains(opener) else { return html }
 
         var out = ""
         out.reserveCapacity(html.count + 512)
 
+        // Everything before `cursor` is already in `out`. `searchFrom` advances
+        // independently so a rejected candidate can be skipped without emitting
+        // or dropping anything — the skipped bytes stay in the verbatim
+        // passthrough.
         var cursor = html.startIndex
-        while let start = html.range(of: opener, range: cursor..<html.endIndex) {
-            // The language runs to the closing quote of the class attribute.
+        var searchFrom = html.startIndex
+        // Bytes committed to `out` so far, so a document that would highlight
+        // past the ceiling stops expanding and copies the rest verbatim rather
+        // than building a page the size of a phone book in memory first.
+        var emitted = 0
+
+        while let start = html.range(of: opener, range: searchFrom..<html.endIndex) {
             guard let quote = html[start.upperBound...].firstIndex(of: "\""),
-                  let tagEnd = html[quote...].firstIndex(of: ">"),
-                  let close = html.range(of: "</code>",
-                                         range: tagEnd..<html.endIndex)
-            else { break }
+                  let tagEnd = html[quote...].firstIndex(of: ">")
+            else { break } // not a well-formed opener; leave the rest verbatim
+
+            let bodyStart = html.index(after: tagEnd)
+
+            // A genuine cmark code block escapes every `<` in its body to
+            // `&lt;`, so the next raw `<` after the opener must begin the
+            // block's own `</code>`. If it does not — a raw-HTML `<code>` the
+            // author wrote, a nested `<code>`, an unterminated opener — this is
+            // not a block this pass owns. Skipping it rather than grabbing a
+            // distant `</code>` is what keeps the output well-formed: a flat
+            // search used to weld an opener here to the closing tag of an
+            // unrelated code block later in the document.
+            guard let nextLt = html[bodyStart...].firstIndex(of: "<"),
+                  html[nextLt...].hasPrefix("</code>")
+            else {
+                searchFrom = bodyStart
+                continue
+            }
 
             let language = String(html[start.upperBound..<quote])
-            let bodyStart = html.index(after: tagEnd)
-            let body = String(html[bodyStart..<close.lowerBound])
+            let body = String(html[bodyStart..<nextLt])
 
-            out += html[cursor..<bodyStart]
-            if let highlighted = SyntaxHighlighter.highlight(unescape(body),
-                                                             language: language) {
-                out += highlighted
-            } else {
-                out += body
-            }
+            let prefix = html[cursor..<bodyStart]
+            out += prefix
+            emitted += prefix.utf8.count
+
+            // Give the highlighter only the budget left, so the whole page —
+            // not just one block — is bounded. A block that would overrun is
+            // served as plain (still-escaped) text.
+            let remaining = maxOutputBytes == .max ? .max : max(0, maxOutputBytes - emitted)
+            let rendered = SyntaxHighlighter.highlight(
+                unescape(body), language: language, maxOutputBytes: remaining) ?? body
+            out += rendered
+            emitted += rendered.utf8.count + "</code>".utf8.count
             out += "</code>"
-            cursor = close.upperBound
+
+            cursor = html.index(nextLt, offsetBy: "</code>".count)
+            searchFrom = cursor
         }
 
         out += html[cursor...]

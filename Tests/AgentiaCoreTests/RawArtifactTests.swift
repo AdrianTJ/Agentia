@@ -214,17 +214,34 @@ final class RawArtifactTests: XCTestCase {
     // MARK: - What it must not do
 
     func testDocumentContentIsOtherwiseUntouched() {
+        // This document styles itself, so it gets the CSP meta and the
+        // print-fidelity style but not the readability fallback.
         let html = """
         <!doctype html><html><head><style>body{background:#111}</style></head>\
         <body><pre>kept &amp; verbatim</pre></body></html>
         """
-        let out = page(html)
+        var out = page(html)
 
-        // Removing exactly the injected meta must give back the original bytes.
-        let meta = try! XCTUnwrap(
-            out.range(of: "<meta http-equiv=\"Content-Security-Policy\"[^>]*>",
-                      options: .regularExpression))
-        XCTAssertEqual(out.replacingCharacters(in: meta, with: ""), html)
+        // Removing exactly what the pass injects must give back the original
+        // bytes — nothing of the document's own is rewritten.
+        for injected in ["<meta http-equiv=\"Content-Security-Policy\"[^>]*>",
+                         "<style>@media print\\{[^<]*</style>"] {
+            let range = try! XCTUnwrap(out.range(of: injected, options: .regularExpression))
+            out.replaceSubrange(range, with: "")
+        }
+        XCTAssertEqual(out, html)
+    }
+
+    /// Artifacts get no theme print CSS, and a browser drops backgrounds in
+    /// print — so a dark dashboard would print its light text onto white paper
+    /// and vanish. Found by dogfooding the PDF path.
+    func testArtifactsPrintAsAuthored() {
+        let out = page("<html><head><style>body{background:#0b0f14}</style></head>"
+                       + "<body>x</body></html>")
+        XCTAssertTrue(out.contains("print-color-adjust:exact"),
+                      "the artifact's own colours must reach paper")
+        XCTAssertTrue(out.contains("@media print"),
+                      "and only on paper — the rule must not touch the screen")
     }
 
     func testNoShellMarkupIsAdded() {

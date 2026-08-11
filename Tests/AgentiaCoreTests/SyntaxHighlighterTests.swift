@@ -131,6 +131,63 @@ final class SyntaxHighlighterTests: XCTestCase {
         XCTAssertEqual(CodeHighlighting.apply(to: html), html)
     }
 
+    /// A well-formed input must stay well-formed. Found by review: a flat
+    /// search for `<code class="language-` welded an opener to the closing tag
+    /// of an unrelated block later in the document.
+    func testRawCodeTagsDoNotProduceMalformedOutput() {
+        // Raw HTML reaches the output because .rawHTML is default-on and
+        // tagfilter does not block <code>.
+        let cases = [
+            // Nested raw <code>: must pass through unchanged, not be mangled.
+            "<p><code class=\"language-js\"><code class=\"language-py\">x</code></code></p>",
+            // An unterminated raw opener must not swallow a later real block.
+            "<p><code class=\"language-js\">open</p><pre><code class=\"language-py\">y = 1</code></pre>",
+        ]
+        for input in cases {
+            let out = CodeHighlighting.apply(to: input)
+            // Highlighting must not change the tag balance. If the author wrote
+            // unbalanced HTML it stays exactly as unbalanced — the bug was that
+            // the pass *added* a mismatch by welding an opener to a distant
+            // closing tag.
+            XCTAssertEqual(tagBalance(out), tagBalance(input),
+                           "highlighting changed the tag balance:\n\(out)")
+        }
+    }
+
+    /// Net `<code>` minus `</code>` across the string. Zero means balanced.
+    private func tagBalance(_ html: String) -> Int {
+        let opens = html.components(separatedBy: "<code").count - 1
+        let closes = html.components(separatedBy: "</code>").count - 1
+        return opens - closes
+    }
+
+    func testTheRealBlockIsStillHighlightedNextToARawOpener() {
+        let input = "<p><code class=\"language-js\">open</p>"
+            + "<pre><code class=\"language-python\">y = 1</code></pre>"
+        let out = CodeHighlighting.apply(to: input)
+        XCTAssertTrue(out.contains("<span class=\"tok-number\">1</span>"),
+                      "the genuine block still gets highlighted")
+        XCTAssertTrue(out.contains("<code class=\"language-js\">open"),
+                      "the raw opener is left exactly as it arrived")
+    }
+
+    /// Each token adds ~30 bytes of wrapper, so dense code can inflate an order
+    /// of magnitude. A single block that would overrun the budget is served as
+    /// plain text rather than built in full — the ceiling that bounds the page
+    /// stays meaningful.
+    func testOversizedHighlightDegradesToPlain() {
+        let body = String(repeating: "1 ", count: 20_000) // ~40 KB of tokens
+        let html = "<pre><code class=\"language-python\">\(body)</code></pre>"
+
+        let bounded = CodeHighlighting.apply(to: html, maxOutputBytes: 4096)
+        XCTAssertFalse(bounded.contains("tok-"),
+                       "over budget, the block renders plain")
+        XCTAssertTrue(bounded.contains(body), "and its text is intact")
+
+        // With room, the same block does get highlighted.
+        XCTAssertTrue(CodeHighlighting.apply(to: html).contains("tok-number"))
+    }
+
     func testTwoBlocksInDifferentLanguages() throws {
         let html = try MarkdownRenderer.renderHTML(
             "```swift\nlet a = 1\n```\n\n```python\nb = 2\n```\n")

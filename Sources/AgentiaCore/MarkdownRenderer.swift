@@ -214,7 +214,14 @@ public enum MarkdownRenderer {
         // Last, so it sees the final escaping. Code content is already escaped
         // by cmark and stays escaped either side of this, so neutralisation
         // above cannot have anything to do with what is inside a code block.
-        return CodeHighlighting.apply(to: text)
+        //
+        // Highlighting only grows the output — each token gains a `<span>` — so
+        // the ceiling checked above no longer holds for it. `apply` keeps a
+        // single page bounded, and if the whole thing still lands over the
+        // ceiling the document is served un-highlighted (which already passed
+        // the check) rather than refused: plain code beats no document.
+        let highlighted = CodeHighlighting.apply(to: text, maxOutputBytes: maximumOutputBytes)
+        return highlighted.utf8.count <= maximumOutputBytes ? highlighted : text
     }
 
     /// Deepest block nesting in the document.

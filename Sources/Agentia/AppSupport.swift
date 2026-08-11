@@ -96,12 +96,27 @@ enum Clipboard {
         }
     }
 
-    /// Removes any `src`/`href`/`url()` whose scheme is not local, so the HTML
-    /// importer has nothing to fetch.
+    /// Removes any attribute or `url()` that points off the machine, so the
+    /// HTML importer has nothing to fetch.
+    ///
+    /// The dangerous cases are matched by the *value*, not the attribute name.
+    /// A name blocklist was tried first and a security review walked straight
+    /// past it with `<object data="http://…">` and SVG `<image xlink:href=…>` —
+    /// neither `data` nor `xlink:href` was in the list, and both make the
+    /// legacy importer perform a synchronous network load on the main thread,
+    /// outside the CSP, the rule list and the navigation delegate. So the first
+    /// two patterns strip *any* attribute whose value carries a remote scheme
+    /// or is protocol-relative; `data:`, `#fragment` and `artifact:` values
+    /// contain no `//` and so are left in place.
     static func strippingRemoteReferences(from html: String) -> String {
         let patterns = [
-            #"(?i)\s(src|href|poster|srcset|background)\s*=\s*"[^"]*""#,
-            #"(?i)\s(src|href|poster|srcset|background)\s*=\s*'[^']*'"#,
+            // Any attribute whose value is a remote or protocol-relative URL.
+            #"(?i)\s[\w:.-]+\s*=\s*"(?:[a-z][a-z0-9+.-]*:)?//[^"]*""#,
+            #"(?i)\s[\w:.-]+\s*=\s*'(?:[a-z][a-z0-9+.-]*:)?//[^']*'"#,
+            // The name-based strip is kept for the reference-carrying
+            // attributes whose value is not itself a URL with `//`.
+            #"(?i)\s(src|href|poster|srcset|background|data|xlink:href)\s*=\s*"[^"]*""#,
+            #"(?i)\s(src|href|poster|srcset|background|data|xlink:href)\s*=\s*'[^']*'"#,
             #"(?i)url\(\s*['"]?[^)]*\)"#,
         ]
 

@@ -217,6 +217,37 @@ final class HardenedWebView: WKWebView {
     func noteBlockedRequest() {
         blockedRequestCount += 1
     }
+
+    /// Runs a would-be navigation through `NavigationPolicy` and dispatches the
+    /// result. Every path that could open something outside the web view goes
+    /// through here, because WebKit has more than one: the navigation delegate,
+    /// `createWebViewWith` (window.open / target="_blank"), and the shell.js
+    /// link bridge each reach the host independently, and a security review
+    /// found the last two skipping the policy entirely — a markdown link to
+    /// `smb://…` opened on a click, and an artifact's `window.open` exfiltrated
+    /// past the confirmation prompt. One chokepoint is the fix.
+    func route(_ url: URL?, isLinkActivation: Bool) {
+        switch NavigationPolicy.decide(
+            url: url,
+            isLinkActivation: isLinkActivation,
+            documentCanScript: currentProfile == .htmlArtifact,
+            documentScheme: ArtifactSchemeHandler.scheme,
+            documentHost: ArtifactSchemeHandler.documentHost
+        ) {
+        case .allow:
+            // Only meaningful for the top-level navigation delegate, which
+            // handles it before calling here. As the outcome of a new-window or
+            // bridge request it means "the document's own URL", which opens
+            // nothing.
+            break
+        case .openExternally:
+            if let url { pageDelegate?.webView(self, didReceive: .openExternal(url: url)) }
+        case .confirmBeforeOpening:
+            if let url { pageDelegate?.webView(self, didReceive: .confirmOpenExternal(url: url)) }
+        case .block:
+            noteBlockedRequest()
+        }
+    }
 }
 
 // MARK: - Navigation
@@ -229,32 +260,23 @@ extension HardenedWebView: WKNavigationDelegate {
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
         let url = navigationAction.request.url
+        let isLinkActivation = navigationAction.navigationType == .linkActivated
 
-        // The decision itself lives in AgentiaCore.NavigationPolicy so it can
-        // be tested; this method is only the wiring. The only navigation ever
-        // permitted is the document's own load, so a meta refresh, a form post
-        // or script setting location cannot replace the view — and for HTML
-        // artifacts, which run no shell script, this is the only thing standing
-        // between a link and the host.
-        switch NavigationPolicy.decide(
+        // The only navigation permitted in place is the document's own load, so
+        // a meta refresh, a form post or script setting location cannot replace
+        // the view. The decision lives in AgentiaCore.NavigationPolicy so it can
+        // be tested; here it decides allow-in-place, and route() handles the
+        // rest exactly as every other exit path does.
+        if NavigationPolicy.decide(
             url: url,
-            isLinkActivation: navigationAction.navigationType == .linkActivated,
+            isLinkActivation: isLinkActivation,
             documentCanScript: currentProfile == .htmlArtifact,
             documentScheme: ArtifactSchemeHandler.scheme,
             documentHost: ArtifactSchemeHandler.documentHost
-        ) {
-        case .allow:
+        ) == .allow {
             decisionHandler(.allow)
-        case .openExternally:
-            if let url { pageDelegate?.webView(self, didReceive: .openExternal(url: url)) }
-            decisionHandler(.cancel)
-        case .confirmBeforeOpening:
-            if let url {
-                pageDelegate?.webView(self, didReceive: .confirmOpenExternal(url: url))
-            }
-            decisionHandler(.cancel)
-        case .block:
-            noteBlockedRequest()
+        } else {
+            route(url, isLinkActivation: isLinkActivation)
             decisionHandler(.cancel)
         }
     }
@@ -289,10 +311,14 @@ extension HardenedWebView: WKUIDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        // window.open from a document opens nothing.
-        if let url = navigationAction.request.url {
-            pageDelegate?.webView(self, didReceive: .openExternal(url: url))
-        }
+        // window.open and target="_blank" arrive here rather than at the
+        // navigation delegate, so they must be routed through the same policy —
+        // otherwise an artifact's script could window.open a URL carrying
+        // document text straight to the browser, unconfirmed. Returning nil
+        // means no nested web view is ever created; route() decides whether the
+        // URL opens externally, needs confirmation, or is dropped.
+        route(navigationAction.request.url,
+              isLinkActivation: navigationAction.navigationType == .linkActivated)
         return nil
     }
 
@@ -349,8 +375,14 @@ private final class MessageProxy: NSObject, WKScriptMessageHandler {
                 target.pageDelegate?.webView(target, didReceive: .copy(text: text))
             }
         case "openExternal":
+            // shell.js intercepts every link click and posts it here with no
+            // scheme filter, so it must be routed through the policy like any
+            // other exit — a markdown link to file:// or smb:// used to reach
+            // NSWorkspace.open unchecked. The bridge exists only for markdown,
+            // which cannot run its own script, so this is a genuine reader
+            // click (a link activation).
             if let string = body["url"] as? String, let url = URL(string: string) {
-                target.pageDelegate?.webView(target, didReceive: .openExternal(url: url))
+                target.route(url, isLinkActivation: true)
             }
         default:
             break

@@ -68,14 +68,23 @@ public enum SyntaxHighlighter {
         }
     }
 
-    /// Highlight `code`, or nil when the language is unknown.
+    /// Highlight `code`, or nil when the language is unknown or the result
+    /// would exceed `maxOutputBytes`.
     ///
     /// Returning nil rather than a best guess is deliberate: an unknown
     /// language renders as plain code, which is correct, whereas guessing
-    /// produces confidently wrong colours.
-    public static func highlight(_ code: String, language: String) -> String? {
+    /// produces confidently wrong colours. The size bound matters because each
+    /// token adds ~30 bytes of `<span>` wrapper, so dense short-token code
+    /// (a data literal, a minified line) can inflate an order of magnitude —
+    /// the caller degrades such a block to plain text rather than hand the
+    /// layout engine hundreds of megabytes.
+    public static func highlight(
+        _ code: String,
+        language: String,
+        maxOutputBytes: Int = .max
+    ) -> String? {
         guard let spec = Language.spec(for: language) else { return nil }
-        return render(tokenise(code, with: spec), of: code)
+        return render(tokenise(code, with: spec), of: code, maxOutputBytes: maxOutputBytes)
     }
 
     public static func supports(_ language: String) -> Bool {
@@ -220,19 +229,30 @@ public enum SyntaxHighlighter {
     /// already-escaped HTML, so every character of the original passes through
     /// exactly one escaping step. Double-escaping shows up as `&amp;lt;` on
     /// screen; missing one is an injection.
-    static func render(_ spans: [Span], of code: String) -> String {
+    static func render(_ spans: [Span], of code: String, maxOutputBytes: Int = .max) -> String? {
         var out = ""
         out.reserveCapacity(code.count + spans.count * 24)
 
+        // Tracked as a running total rather than reading out.utf8.count each
+        // step, which would make the whole pass quadratic.
+        var bytes = 0
+        func emit(_ piece: String) -> Bool {
+            bytes += piece.utf8.count
+            if bytes > maxOutputBytes { return false }
+            out += piece
+            return true
+        }
+
         var cursor = code.startIndex
         for span in spans where span.range.lowerBound >= cursor {
-            out += escape(String(code[cursor..<span.range.lowerBound]))
-            out += "<span class=\"\(span.token.cssClass)\">"
-            out += escape(String(code[span.range]))
-            out += "</span>"
+            guard emit(escape(String(code[cursor..<span.range.lowerBound]))),
+                  emit("<span class=\"\(span.token.cssClass)\">"),
+                  emit(escape(String(code[span.range]))),
+                  emit("</span>")
+            else { return nil }
             cursor = span.range.upperBound
         }
-        out += escape(String(code[cursor...]))
+        guard emit(escape(String(code[cursor...]))) else { return nil }
         return out
     }
 

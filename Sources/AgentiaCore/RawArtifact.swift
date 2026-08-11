@@ -39,6 +39,7 @@ public enum RawArtifact {
     /// the whole document.
     public static func page(html: String, csp: String) -> String {
         var meta = "<meta http-equiv=\"Content-Security-Policy\" content=\"\(escapeAttribute(csp))\">"
+        meta += Self.printFidelityStyle
         if needsReadabilityFallback(html) {
             meta += Self.readabilityFallback
         }
@@ -72,6 +73,17 @@ public enum RawArtifact {
     /// it.
     static let readabilityFallback =
         "<style>:root{color-scheme:only light;background-color:#fff;color:#111}</style>"
+
+    /// Makes an artifact print the way it looks.
+    ///
+    /// Artifacts get none of the shell's print CSS, and a browser drops
+    /// backgrounds in print by default — so a dark dashboard would print its
+    /// light text onto white paper and vanish. `print-color-adjust: exact`
+    /// keeps its own background and colours, which is the "served as authored"
+    /// answer for paper too. It is a print-only rule, so it changes nothing on
+    /// screen.
+    static let printFidelityStyle =
+        "<style>@media print{html{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>"
 
     /// Does this artifact style nothing at all, and so need a readable ground?
     ///

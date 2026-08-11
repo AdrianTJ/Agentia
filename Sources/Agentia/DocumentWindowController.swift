@@ -645,8 +645,13 @@ extension DocumentWindowController: HardenedWebViewDelegate {
             Clipboard.writePlain(text)
 
         case .openExternal(let url):
-            // Scheme filtering happened in NavigationPolicy; by here the URL is
-            // one a browser should get.
+            // Every producer now routes through NavigationPolicy before emitting
+            // this, so the scheme is already an allowlisted one. Re-checked here
+            // anyway: this is the single call to NSWorkspace.open, and it must
+            // never be reached by a file:// or smb:// URL regardless of how the
+            // message was produced.
+            guard let scheme = url.scheme?.lowercased(),
+                  NavigationPolicy.externallyOpenableSchemes.contains(scheme) else { return }
             NSWorkspace.shared.open(url)
 
         case .confirmOpenExternal(let url):
