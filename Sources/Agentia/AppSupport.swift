@@ -253,20 +253,219 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
     }
 }
 
-// MARK: - Sidebar
+// MARK: - Find bar
 
-/// The vertical document list. Hidden by default, so it is constructed the
-/// first time it is revealed and never during launch.
-final class SidebarView: NSView {
+/// The in-page find strip.
+///
+/// Search itself is `WKWebView.find`, which highlights inside the rendered page
+/// rather than the source — what a reader wants when looking for a phrase they
+/// can see. This is only the chrome around it.
+final class FindBar: NSView {
 
-    private weak var controller: DocumentWindowController?
+    static let preferredHeight: CGFloat = 36
 
-    init(controller: DocumentWindowController) {
-        self.controller = controller
-        super.init(frame: NSRect(x: 0, y: 0, width: 228, height: 400))
-        wantsLayer = true
+    /// Called with the query and a direction; nil query means "dismissed".
+    private let onSearch: (String, Bool) -> Void
+    private let onDismiss: () -> Void
+
+    private let field = NSSearchField()
+    private let status = NSTextField(labelWithString: "")
+
+    init(onSearch: @escaping (String, Bool) -> Void, onDismiss: @escaping () -> Void) {
+        self.onSearch = onSearch
+        self.onDismiss = onDismiss
+        super.init(frame: NSRect(x: 0, y: 0, width: 400, height: Self.preferredHeight))
+        build()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    private func build() {
+        wantsLayer = true
+
+        field.placeholderString = "Find in document"
+        field.sendsWholeSearchString = false
+        field.sendsSearchStringImmediately = false
+        field.target = self
+        field.action = #selector(searchChanged)
+
+        // Titles as the fallback rather than force-unwrapping the symbol: a
+        // missing SF Symbol must not be able to crash the app on launch.
+        let previous = Self.button(symbol: "chevron.up", title: "Previous",
+                                   target: self, action: #selector(findPrevious))
+        let next = Self.button(symbol: "chevron.down", title: "Next",
+                               target: self, action: #selector(findNext))
+        let done = NSButton(title: "Done", target: self, action: #selector(dismiss))
+        done.bezelStyle = .rounded
+
+        status.font = .systemFont(ofSize: 11)
+        status.textColor = .secondaryLabelColor
+
+        let stack = NSStackView(views: [field, status, previous, next, done])
+        stack.orientation = .horizontal
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
+        ])
+    }
+
+    private static func button(
+        symbol: String, title: String, target: AnyObject, action: Selector
+    ) -> NSButton {
+        let button: NSButton
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title) {
+            button = NSButton(image: image, target: target, action: action)
+        } else {
+            button = NSButton(title: title, target: target, action: action)
+        }
+        button.bezelStyle = .rounded
+        button.setAccessibilityLabel(title)
+        return button
+    }
+
+    var query: String { field.stringValue }
+
+    func focus() {
+        window?.makeFirstResponder(field)
+        field.selectText(nil)
+    }
+
+    /// WKWebView's find API reports only whether there was a match, never how
+    /// many, so the status line says what is actually known rather than
+    /// inventing "3 of 12".
+    func report(found: Bool) {
+        status.stringValue = field.stringValue.isEmpty ? ""
+            : (found ? "" : "Not found")
+    }
+
+    @objc private func searchChanged() { onSearch(field.stringValue, true) }
+    @objc private func findNext() { onSearch(field.stringValue, true) }
+    @objc private func findPrevious() { onSearch(field.stringValue, false) }
+    @objc private func dismiss() { onDismiss() }
+
+    /// Esc closes the bar, the way every other find bar on the platform does.
+    override func cancelOperation(_ sender: Any?) { onDismiss() }
+}
+
+// MARK: - Sidebar
+
+/// The vertical document list: every file opened this session, newest first.
+///
+/// Hidden by default, and built the first time it is revealed rather than at
+/// launch — the whole point of the AppKit lifecycle here is that nothing
+/// optional runs before first paint.
+final class SidebarView: NSView {
+
+    static let preferredWidth: CGFloat = 228
+
+    private weak var controller: DocumentWindowController?
+    private let tableView = NSTableView()
+    private let scrollView = NSScrollView()
+    private var documents: [URL] = []
+
+    /// Set while the table's selection is being changed programmatically, so
+    /// reloading the list does not read as the reader picking a document and
+    /// reopen the file underneath them.
+    private var isSyncingSelection = false
+
+    init(controller: DocumentWindowController) {
+        self.controller = controller
+        super.init(frame: NSRect(x: 0, y: 0, width: Self.preferredWidth, height: 400))
+        build()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    private func build() {
+        wantsLayer = true
+
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("document"))
+        column.resizingMask = .autoresizingMask
+        tableView.addTableColumn(column)
+        tableView.headerView = nil
+        tableView.rowHeight = 34
+        tableView.style = .inset
+        tableView.backgroundColor = .clear
+        tableView.selectionHighlightStyle = .regular
+        tableView.allowsMultipleSelection = false
+        tableView.dataSource = self
+        tableView.delegate = self
+
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(scrollView)
+
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    /// Show `documents`, with `selected` highlighted.
+    func reload(documents: [URL], selected: URL?) {
+        self.documents = documents
+        tableView.reloadData()
+
+        isSyncingSelection = true
+        defer { isSyncingSelection = false }
+
+        if let selected, let row = documents.firstIndex(of: selected) {
+            tableView.selectRowIndexes([row], byExtendingSelection: false)
+        } else {
+            tableView.deselectAll(nil)
+        }
+    }
+}
+
+extension SidebarView: NSTableViewDataSource, NSTableViewDelegate {
+
+    func numberOfRows(in tableView: NSTableView) -> Int { documents.count }
+
+    func tableView(
+        _ tableView: NSTableView,
+        viewFor tableColumn: NSTableColumn?,
+        row: Int
+    ) -> NSView? {
+        let url = documents[row]
+
+        let title = NSTextField(labelWithString: url.lastPathComponent)
+        title.font = .systemFont(ofSize: 12, weight: .medium)
+        title.lineBreakMode = .byTruncatingMiddle
+
+        // The containing folder, because agents write the same handful of names
+        // — report.md, summary.md — into different runs, and the file name
+        // alone often cannot tell two entries apart.
+        let subtitle = NSTextField(labelWithString:
+            url.deletingLastPathComponent().lastPathComponent)
+        subtitle.font = .systemFont(ofSize: 10)
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.lineBreakMode = .byTruncatingMiddle
+
+        let stack = NSStackView(views: [title, subtitle])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 1
+        stack.edgeInsets = NSEdgeInsets(top: 2, left: 6, bottom: 2, right: 6)
+        return stack
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        guard !isSyncingSelection else { return }
+        let row = tableView.selectedRow
+        guard documents.indices.contains(row) else { return }
+        controller?.open(documents[row])
+    }
 }

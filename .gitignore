@@ -17,3 +17,6 @@ tools/webtest/test-results/
 # Xcode
 xcuserdata/
 *.xcuserstate
+
+# Agent worktrees (created by background subagents)
+.claude/worktrees/

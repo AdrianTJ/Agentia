@@ -35,7 +35,11 @@ final class DocumentWindowController: NSWindowController {
     /// Every document opened this session, newest first — the sidebar list.
     private(set) var openDocuments: [URL] = []
 
-    private var sidebarView: NSView?
+    private var sidebarView: SidebarView?
+    /// Collapsed to zero rather than hidden, so showing it is one animation.
+    private var sidebarWidth: NSLayoutConstraint?
+    private var findBar: FindBar?
+    private var findBarHeight: NSLayoutConstraint?
     private var toolbarController: DocumentToolbar?
 
     init(webView: HardenedWebView) {
@@ -85,8 +89,7 @@ final class DocumentWindowController: NSWindowController {
         // again, with the document still loaded in the web view.
         window.isReleasedWhenClosed = false
 
-        webView.autoresizingMask = [.width, .height]
-        window.contentView = webView
+        window.contentView = makeContentView()
 
         let toolbar = DocumentToolbar(target: self)
         window.toolbar = toolbar.makeToolbar()
@@ -100,6 +103,66 @@ final class DocumentWindowController: NSWindowController {
         window.setFrameAutosaveName("AgentiaDocumentWindow")
 
         return window
+    }
+
+    /// The window's content: an optional sidebar beside the document.
+    ///
+    /// Auto Layout with a collapsible width constraint rather than an
+    /// NSSplitView. A split view brings a divider the reader can drag to zero,
+    /// a delegate to keep it from doing so, and autosaved positions that then
+    /// disagree with the toolbar button's idea of whether the sidebar is
+    /// showing. One constraint has none of that.
+    private func makeContentView() -> NSView {
+        let container = NSView()
+
+        let sidebar = SidebarView(controller: self)
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebarView = sidebar
+
+        let find = FindBar(
+            onSearch: { [weak self] query, forward in
+                self?.runFind(query, forward: forward)
+            },
+            onDismiss: { [weak self] in self?.hideFindBar() }
+        )
+        find.translatesAutoresizingMaskIntoConstraints = false
+        findBar = find
+
+        webView.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(sidebar)
+        container.addSubview(find)
+        container.addSubview(webView)
+
+        let findHeight = find.heightAnchor.constraint(equalToConstant: 0)
+        findBarHeight = findHeight
+        find.clipsToBounds = true
+
+        NSLayoutConstraint.activate([
+            find.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            find.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            find.topAnchor.constraint(equalTo: container.topAnchor),
+            findHeight,
+        ])
+
+        // Hidden at launch: zero width, and clipped so its contents cannot
+        // paint outside it while collapsed.
+        let width = sidebar.widthAnchor.constraint(equalToConstant: 0)
+        sidebarWidth = width
+
+        NSLayoutConstraint.activate([
+            sidebar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: container.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            width,
+
+            webView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: find.bottomAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        return container
     }
 
     func showEmptyState() {
@@ -135,6 +198,8 @@ final class DocumentWindowController: NSWindowController {
             if !openDocuments.contains(url) {
                 openDocuments.insert(url, at: 0)
             }
+            // Only costs anything once the reader has opened the sidebar.
+            if sidebarWidth?.constant ?? 0 > 0 { refreshSidebar() }
 
             startWatching(url)
             render()
@@ -308,20 +373,28 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
-        // Built lazily: hidden by default means it must not cost anything at
-        // launch.
-        if sidebarView == nil {
-            sidebarView = SidebarView(controller: self)
+        guard let sidebarWidth else { return }
+        let showing = sidebarWidth.constant > 0
+        refreshSidebar()
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.allowsImplicitAnimation = true
+            sidebarWidth.animator().constant = showing ? 0 : SidebarView.preferredWidth
+            window?.contentView?.layoutSubtreeIfNeeded()
         }
-        sidebarView?.isHidden.toggle()
     }
 
-    /// `SidebarView` is a stub that is never added to the view hierarchy, so
-    /// toggling it does nothing a reader can see. Until it is built, the
-    /// controls that drive it are disabled rather than left looking functional
-    /// — a button that does nothing reads as a broken app, not an absent
-    /// feature.
-    var isSidebarImplemented: Bool { false }
+    /// Keep the list in step with what has been opened.
+    ///
+    /// Only called when the sidebar is about to be shown or is already showing,
+    /// so a reader who never opens it pays nothing.
+    private func refreshSidebar() {
+        guard let sidebarView, sidebarWidth != nil else { return }
+        sidebarView.reload(documents: openDocuments, selected: snapshot?.url)
+    }
+
+    var isSidebarImplemented: Bool { true }
 
     @objc func copyAll(_ sender: Any?) {
         guard let snapshot else { return }
@@ -350,19 +423,45 @@ final class DocumentWindowController: NSWindowController {
 
     /// In-page find. WKWebView's own implementation highlights inside the
     /// rendered page rather than the source, which is what a reader wants.
-    ///
-    /// Not yet wired to a find bar — this is the plumbing, and the UI lands
-    /// with the sidebar in Phase 3.
     @objc func performFind(_ sender: Any?) {
+        guard let findBarHeight, let findBar else { return }
+        findBarHeight.constant = FindBar.preferredHeight
+        window?.contentView?.layoutSubtreeIfNeeded()
+        findBar.focus()
+    }
+
+    private func hideFindBar() {
+        guard let findBarHeight else { return }
+        findBarHeight.constant = 0
+        window?.contentView?.layoutSubtreeIfNeeded()
+        // Clearing the highlight matters: leaving the page speckled with
+        // matches after the bar is gone looks like rendering damage.
+        webView.find("", configuration: WKFindConfiguration()) { _ in }
         window?.makeFirstResponder(webView)
     }
 
-    func find(_ query: String, forward: Bool = true) {
+    private func runFind(_ query: String, forward: Bool) {
+        guard !query.isEmpty else {
+            findBar?.report(found: true)
+            return
+        }
+        find(query, forward: forward) { [weak self] found in
+            self?.findBar?.report(found: found)
+        }
+    }
+
+    func find(
+        _ query: String,
+        forward: Bool = true,
+        completion: ((Bool) -> Void)? = nil
+    ) {
         let configuration = WKFindConfiguration()
         configuration.backwards = !forward
         configuration.caseSensitive = false
         configuration.wraps = true
-        webView.find(query, configuration: configuration) { _ in }
+        webView.find(query, configuration: configuration) { result in
+            completion?(result.matchFound)
+        }
     }
 
     @objc func allowNetworkForDocument(_ sender: Any?) {
