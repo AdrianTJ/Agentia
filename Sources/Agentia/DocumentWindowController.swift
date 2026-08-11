@@ -578,6 +578,16 @@ final class DocumentWindowController: NSWindowController {
         render()
     }
 
+    /// Scroll the document to a heading the outline names.
+    ///
+    /// The script is built in AgentiaCore.PageScript, where its escaping is
+    /// tested — the id comes from the document, and this runs with the host's
+    /// authority.
+    func scrollToHeading(id: String) {
+        guard let script = PageScript.scrollToElement(id: id) else { return }
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
     /// Every theme in the bundle, for the menu and the Settings window.
     var availableThemes: [Theme] { themes }
     var currentThemeID: String? { theme?.id }
@@ -688,8 +698,10 @@ extension DocumentWindowController: HardenedWebViewDelegate {
 
     func webView(_ view: HardenedWebView, didReceive message: PageMessage) {
         switch message {
-        case .ready:
+        case .ready(let outline, _):
             Launch.reportFirstPaint()
+            // The page has always sent this; it used to be discarded.
+            sidebarView?.setOutline(outline)
 
         case .scroll(let fraction):
             // Remembered so a live reload lands where the reader was.

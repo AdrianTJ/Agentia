@@ -435,10 +435,20 @@ final class SidebarView: NSView {
 
     static let preferredWidth: CGFloat = 228
 
+    /// What the list is showing. Two things are worth navigating from here —
+    /// the other files of the run, and the headings of this one — and a
+    /// segmented control is cheaper than two panes for a 228pt column.
+    enum Mode: Int {
+        case documents, outline
+    }
+
     private weak var controller: DocumentWindowController?
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
+    private let modeControl = NSSegmentedControl()
     private var documents: [URL] = []
+    private var outline: [OutlineItem] = []
+    private var mode: Mode = .documents
 
     /// Set while the table's selection is being changed programmatically, so
     /// reloading the list does not read as the reader picking a document and
@@ -473,41 +483,98 @@ final class SidebarView: NSView {
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        modeControl.segmentStyle = .texturedRounded
+        modeControl.segmentCount = 2
+        modeControl.setLabel("Files", forSegment: 0)
+        modeControl.setLabel("Outline", forSegment: 1)
+        modeControl.selectedSegment = 0
+        modeControl.target = self
+        modeControl.action = #selector(modeChanged)
+        modeControl.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(modeControl)
         addSubview(scrollView)
 
         NSLayoutConstraint.activate([
+            modeControl.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            modeControl.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            modeControl.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.topAnchor.constraint(equalTo: modeControl.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+    }
+
+    @objc private func modeChanged() {
+        mode = Mode(rawValue: modeControl.selectedSegment) ?? .documents
+        tableView.reloadData()
+        syncSelection()
+    }
+
+    /// The headings of the document on screen, as `shell.js` found them.
+    ///
+    /// The page has always sent this on every load and the host has always
+    /// thrown it away.
+    func setOutline(_ items: [OutlineItem]) {
+        outline = items
+        // An empty outline would make the segment a dead end, so it is disabled
+        // rather than offering a blank list — a document with no headings is
+        // ordinary, not an error.
+        modeControl.setEnabled(!items.isEmpty, forSegment: 1)
+        if items.isEmpty, mode == .outline {
+            mode = .documents
+            modeControl.selectedSegment = 0
+        }
+        if mode == .outline { tableView.reloadData() }
     }
 
     /// Show `documents`, with `selected` highlighted.
     func reload(documents: [URL], selected: URL?) {
         self.documents = documents
+        self.selectedDocument = selected
         tableView.reloadData()
+        syncSelection()
+    }
 
+    private var selectedDocument: URL?
+
+    /// Highlight the row matching the current state, without letting that read
+    /// as the reader picking something.
+    private func syncSelection() {
         isSyncingSelection = true
         defer { isSyncingSelection = false }
 
-        if let selected, let row = documents.firstIndex(of: selected) {
-            tableView.selectRowIndexes([row], byExtendingSelection: false)
-        } else {
+        guard mode == .documents,
+              let selectedDocument,
+              let row = documents.firstIndex(of: selectedDocument)
+        else {
+            // Outline rows are jump targets, not a selection: nothing in the
+            // document is "selected" just because it is on screen.
             tableView.deselectAll(nil)
+            return
         }
+        tableView.selectRowIndexes([row], byExtendingSelection: false)
     }
 }
 
 extension SidebarView: NSTableViewDataSource, NSTableViewDelegate {
 
-    func numberOfRows(in tableView: NSTableView) -> Int { documents.count }
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        mode == .documents ? documents.count : outline.count
+    }
 
     func tableView(
         _ tableView: NSTableView,
         viewFor tableColumn: NSTableColumn?,
         row: Int
     ) -> NSView? {
+        if mode == .outline {
+            return outlineRow(row)
+        }
+
         let url = documents[row]
 
         let title = NSTextField(labelWithString: url.lastPathComponent)
@@ -531,9 +598,43 @@ extension SidebarView: NSTableViewDataSource, NSTableViewDelegate {
         return stack
     }
 
+    /// One row of the outline, indented by heading level.
+    ///
+    /// Indentation rather than a disclosure tree: an outline is read at a
+    /// glance to find a section, and a tree adds twist-downs to collapse the
+    /// very structure you opened it to see.
+    private func outlineRow(_ row: Int) -> NSView {
+        let item = outline[row]
+
+        let title = NSTextField(labelWithString: item.title)
+        title.lineBreakMode = .byTruncatingTail
+        // Top-level headings carry the weight; deeper ones recede, so the shape
+        // of the document is legible without reading any of it.
+        title.font = .systemFont(ofSize: item.level <= 2 ? 12 : 11,
+                                 weight: item.level <= 2 ? .medium : .regular)
+        title.textColor = item.level <= 2 ? .labelColor : .secondaryLabelColor
+
+        let stack = NSStackView(views: [title])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        // h1 sits flush; each level indents. Clamped so a stray h6 in a deeply
+        // nested document does not push its text off the column entirely.
+        let depth = CGFloat(min(max(item.level - 1, 0), 3))
+        stack.edgeInsets = NSEdgeInsets(top: 2, left: 8 + depth * 13,
+                                        bottom: 2, right: 8)
+        return stack
+    }
+
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard !isSyncingSelection else { return }
         let row = tableView.selectedRow
+
+        if mode == .outline {
+            guard outline.indices.contains(row) else { return }
+            controller?.scrollToHeading(id: outline[row].id)
+            return
+        }
+
         guard documents.indices.contains(row) else { return }
         controller?.open(documents[row])
     }
