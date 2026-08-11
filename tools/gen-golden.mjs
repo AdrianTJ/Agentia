@@ -20,7 +20,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ROOT, Profile, shellScript, shellScriptHash, contentSecurityPolicy,
-  escapeForHTMLText, neutraliseClosingScriptTags,
+  escapeForHTMLText, neutraliseClosingScriptTags, displayCSS, substitute,
 } from "./webtest/build-page.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -61,6 +61,29 @@ const golden = {
     '{"a":"<!--<script>"}',
     '{"a":"<!--<SCRIPT"}',
   ].map((input) => ({ input, expected: neutraliseClosingScriptTags(input) })),
+
+  // The reader's font scale. Both implementations clamp to the same range and
+  // format to four decimals — a scale in scientific notation would not parse as
+  // CSS, and the page would silently render at the theme's size. Includes the
+  // print reset, whose placement inside this declaration is what makes it win.
+  displayCSS: [0.7, 1, 1.3, 2, 12, 0.01, -5, 1.0001]
+    .map((input) => ({ input, expected: displayCSS(input) })),
+
+  // Placeholder substitution. Non-reentrant by construction and tolerant of
+  // unknown tokens, because a document about Handlebars or Jinja is an ordinary
+  // thing for an agent to write.
+  substitution: [
+    { template: "a {{X}} b", values: { X: "1" } },
+    { template: "{{X}}{{Y}}", values: { X: "{{Y}}", Y: "2" } },
+    { template: "{{UNKNOWN}}", values: { X: "1" } },
+    { template: "{{ X }}", values: { X: "1" } },
+    { template: "{{}}", values: { X: "1" } },
+    { template: "{{TOO_LONG_A_NAME_TO_BE_A_TOKEN_AT_ALL_HERE}}", values: {} },
+    { template: "unterminated {{X", values: { X: "1" } },
+    { template: "{{x}}", values: { X: "1" } },
+  ].map(({ template, values }) => ({
+    template, values, expected: substitute(template, values),
+  })),
 };
 
 mkdirSync(OUT_DIR, { recursive: true });

@@ -170,8 +170,12 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc private func themeChanged() {
-        guard themeList.indexOfSelectedItem < themes.count else { return }
-        apply(themeID: themes[themeList.indexOfSelectedItem].id, scale: selectedScale)
+        // `indices.contains`, not `< count`: NSPopUpButton returns -1 when
+        // nothing is selected, and -1 passes an upper-bound-only check and then
+        // traps on the subscript.
+        let index = themeList.indexOfSelectedItem
+        guard themes.indices.contains(index) else { return }
+        apply(themeID: themes[index].id, scale: selectedScale)
     }
 
     @objc private func sizeChanged() {

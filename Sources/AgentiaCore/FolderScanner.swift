@@ -35,9 +35,15 @@ public enum FolderScanner {
 
         let readable = entries.filter { url in
             switch DocumentKind.forURL(url) {
-            case .markdown, .html: return true
+            case .markdown, .html: break
             case .plainText: return false
             }
+            // The extension is not enough: a *directory* named `notes.md` is a
+            // perfectly legal thing to have, and it would otherwise appear as a
+            // document and fail only when opened. `.isRegularFileKey` was being
+            // requested and never read.
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
+            return values?.isRegularFile ?? false
         }
 
         // One stat per candidate, after filtering rather than before, so a

@@ -65,5 +65,96 @@
       "input": "{\"a\":\"<!--<SCRIPT\"}",
       "expected": "{\"a\":\"\\u003c!--\\u003cSCRIPT\"}"
     }
+  ],
+  "displayCSS": [
+    {
+      "input": 0.7,
+      "expected": ":root{--agentia-scale:0.7000}@media print{:root{--agentia-scale:1}}"
+    },
+    {
+      "input": 1,
+      "expected": ""
+    },
+    {
+      "input": 1.3,
+      "expected": ":root{--agentia-scale:1.3000}@media print{:root{--agentia-scale:1}}"
+    },
+    {
+      "input": 2,
+      "expected": ":root{--agentia-scale:2.0000}@media print{:root{--agentia-scale:1}}"
+    },
+    {
+      "input": 12,
+      "expected": ":root{--agentia-scale:2.0000}@media print{:root{--agentia-scale:1}}"
+    },
+    {
+      "input": 0.01,
+      "expected": ":root{--agentia-scale:0.7000}@media print{:root{--agentia-scale:1}}"
+    },
+    {
+      "input": -5,
+      "expected": ":root{--agentia-scale:0.7000}@media print{:root{--agentia-scale:1}}"
+    },
+    {
+      "input": 1.0001,
+      "expected": ":root{--agentia-scale:1.0001}@media print{:root{--agentia-scale:1}}"
+    }
+  ],
+  "substitution": [
+    {
+      "template": "a {{X}} b",
+      "values": {
+        "X": "1"
+      },
+      "expected": "a 1 b"
+    },
+    {
+      "template": "{{X}}{{Y}}",
+      "values": {
+        "X": "{{Y}}",
+        "Y": "2"
+      },
+      "expected": "{{Y}}2"
+    },
+    {
+      "template": "{{UNKNOWN}}",
+      "values": {
+        "X": "1"
+      },
+      "expected": "{{UNKNOWN}}"
+    },
+    {
+      "template": "{{ X }}",
+      "values": {
+        "X": "1"
+      },
+      "expected": "{{ X }}"
+    },
+    {
+      "template": "{{}}",
+      "values": {
+        "X": "1"
+      },
+      "expected": "{{}}"
+    },
+    {
+      "template": "{{TOO_LONG_A_NAME_TO_BE_A_TOKEN_AT_ALL_HERE}}",
+      "values": {},
+      "expected": "{{TOO_LONG_A_NAME_TO_BE_A_TOKEN_AT_ALL_HERE}}"
+    },
+    {
+      "template": "unterminated {{X",
+      "values": {
+        "X": "1"
+      },
+      "expected": "unterminated {{X"
+    },
+    {
+      "template": "{{x}}",
+      "values": {
+        "X": "1"
+      },
+      "expected": "{{x}}"
+    }
   ]
 }

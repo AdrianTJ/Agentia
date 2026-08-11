@@ -530,16 +530,28 @@ final class SidebarView: NSView {
     /// The page has always sent this on every load and the host has always
     /// thrown it away.
     func setOutline(_ items: [OutlineItem]) {
+        let wasShowingOutline = mode == .outline
         outline = items
+
         // An empty outline would make the segment a dead end, so it is disabled
         // rather than offering a blank list — a document with no headings is
         // ordinary, not an error.
         modeControl.setEnabled(!items.isEmpty, forSegment: 1)
-        if items.isEmpty, mode == .outline {
+        if items.isEmpty, wasShowingOutline {
             mode = .documents
             modeControl.selectedSegment = 0
         }
-        if mode == .outline { tableView.reloadData() }
+
+        // Reload if the outline is showing *or* was a moment ago. Testing the
+        // mode after the fallback above had already changed it meant the one
+        // case that most needs a redraw — outline mode, new document with no
+        // headings — was the one case that skipped it, leaving the previous
+        // document's headings on screen under a list that had switched to
+        // Files.
+        if wasShowingOutline || mode == .outline {
+            tableView.reloadData()
+            syncSelection()
+        }
     }
 
     /// Show `documents`, with `selected` highlighted.
