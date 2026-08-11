@@ -29,12 +29,19 @@
     </filter>
   </defs>
 
-  <!-- The macOS rounded-rect ground, inset the standard ~100/1024. -->
-  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#ground)"/>
+  <!--
+    Full bleed, and deliberately no rounded corners of our own.
 
-  <!-- A soft highlight across the top, so the ground is not flat. -->
-  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="none"
-        stroke="#ffffff" stroke-opacity="0.14" stroke-width="3"/>
+    macOS 26 masks every app icon into its own squircle and adds the Liquid
+    Glass edge treatment. Drawing a rounded rect inset at the old Big Sur
+    100/1024 margin meant the system masked an already-inset shape, so the
+    artwork ended up roughly half the width first-party icons use — checked by
+    rendering NSWorkspace.icon(forFile:) for this app beside Notes.app and
+    comparing. The ground now runs edge to edge and the system does the shaping.
+
+    Content stays inside the middle ~60% so the mask cannot clip it.
+  -->
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#ground)"/>
 
   <!--
     The page fills most of the ground, and the lines are few and thick. An
@@ -43,24 +50,24 @@
     the composition.
   -->
   <g filter="url(#lift)">
-    <rect x="262" y="202" width="500" height="620" rx="26" ry="26" fill="url(#paper)"/>
+    <rect x="196" y="150" width="632" height="784" rx="34" ry="34" fill="url(#paper)"/>
   </g>
 
   <!-- Title: shorter and darker, the way a heading reads. -->
-  <rect x="314" y="278" width="240" height="34" rx="17" fill="#2b3038"/>
+  <rect x="262" y="242" width="304" height="42" rx="21" fill="#2b3038"/>
 
   <!-- Body. -->
-  <rect x="314" y="358" width="396" height="22" rx="11" fill="#c9ced5"/>
-  <rect x="314" y="400" width="344" height="22" rx="11" fill="#c9ced5"/>
+  <rect x="262" y="344" width="500" height="28" rx="14" fill="#c9ced5"/>
+  <rect x="262" y="398" width="434" height="28" rx="14" fill="#c9ced5"/>
 
   <!-- The changed block: the tint and left rule the diff view draws. -->
-  <rect x="286" y="458" width="424" height="138" rx="12" fill="#a8681f" fill-opacity="0.11"/>
-  <rect x="286" y="458" width="10" height="138" rx="5" fill="#a8681f"/>
-  <rect x="326" y="486" width="356" height="22" rx="11" fill="#bd8b46"/>
-  <rect x="326" y="530" width="286" height="22" rx="11" fill="#bd8b46"/>
+  <rect x="226" y="472" width="536" height="176" rx="16" fill="#a8681f" fill-opacity="0.11"/>
+  <rect x="226" y="472" width="13" height="176" rx="6" fill="#a8681f"/>
+  <rect x="278" y="508" width="450" height="28" rx="14" fill="#bd8b46"/>
+  <rect x="278" y="562" width="362" height="28" rx="14" fill="#bd8b46"/>
 
   <!-- Body resumes. -->
-  <rect x="314" y="638" width="396" height="22" rx="11" fill="#c9ced5"/>
-  <rect x="314" y="680" width="310" height="22" rx="11" fill="#c9ced5"/>
-  <rect x="314" y="722" width="372" height="22" rx="11" fill="#c9ced5"/>
+  <rect x="262" y="696" width="500" height="28" rx="14" fill="#c9ced5"/>
+  <rect x="262" y="750" width="392" height="28" rx="14" fill="#c9ced5"/>
+  <rect x="262" y="804" width="470" height="28" rx="14" fill="#c9ced5"/>
 </svg>
