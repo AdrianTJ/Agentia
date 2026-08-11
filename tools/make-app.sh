@@ -17,8 +17,7 @@ set -euo pipefail
 
 if [ "$(uname)" != "Darwin" ]; then
   echo "make-app.sh builds a macOS app bundle and only runs on macOS." >&2
-  echo "The parsing core and render shell are testable anywhere:" >&2
-  echo "  tools/build-ctest.sh              # C tests" >&2
+  echo "The render shell is testable anywhere Chromium runs:" >&2
   echo "  node tools/webtest/run-tests.mjs  # browser tests" >&2
   exit 1
 fi

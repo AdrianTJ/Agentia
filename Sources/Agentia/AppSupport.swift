@@ -139,7 +139,7 @@ enum Clipboard {
 final class DocumentToolbar: NSObject, NSToolbarDelegate {
 
     private weak var target: DocumentWindowController?
-    private var blockedItem: NSToolbarItem?
+    private weak var toolbar: NSToolbar?
 
     init(target: DocumentWindowController) {
         self.target = target
@@ -159,6 +159,7 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
+        self.toolbar = toolbar
         return toolbar
     }
 
@@ -194,12 +195,11 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
             return button(identifier, symbol: "folder", label: "Reveal in Finder",
                           action: #selector(DocumentWindowController.revealInFinder(_:)))
         case ItemID.blocked:
-            let item = button(identifier, symbol: "exclamationmark.shield",
-                              label: "Blocked requests",
-                              action: #selector(DocumentWindowController.allowNetworkForDocument(_:)))
-            item.isHidden = true
-            blockedItem = item
-            return item
+            // Not created in `toolbarDefaultItemIdentifiers`, so this is only
+            // asked for when updateBlockedCount inserts it.
+            return button(identifier, symbol: "exclamationmark.shield",
+                          label: "Blocked requests",
+                          action: #selector(DocumentWindowController.allowNetworkForDocument(_:)))
         default:
             return nil
         }
@@ -221,13 +221,35 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
         return item
     }
 
-    /// Shows how many remote requests the document tried to make. Hidden when
-    /// there were none, so a clean document has no chrome for it.
+    /// Shows how many remote requests the document tried to make. The item is
+    /// removed from the toolbar when there were none, so a clean document has
+    /// no chrome for it.
+    ///
+    /// `NSToolbarItem.isHidden` would be simpler but is macOS 15+; remove and
+    /// re-insert keeps the macOS 13 floor declared in Package.swift.
     func updateBlockedCount(_ count: Int) {
-        guard let blockedItem else { return }
-        blockedItem.isHidden = count == 0
-        blockedItem.label = count == 1 ? "1 request blocked" : "\(count) requests blocked"
-        blockedItem.toolTip = blockedItem.label + " — click to allow for this document"
+        guard let toolbar else { return }
+        let identifier = ItemID.blocked
+        let present = toolbar.items.contains { $0.itemIdentifier == identifier }
+
+        if count == 0, present {
+            if let index = toolbar.items.firstIndex(where: { $0.itemIdentifier == identifier }) {
+                toolbar.removeItem(at: index)
+            }
+        } else if count > 0, !present {
+            // Insert before the view-mode item; if it is gone for any reason,
+            // fall back to the end of the toolbar.
+            let index = toolbar.items.firstIndex {
+                $0.itemIdentifier == ItemID.viewMode
+            } ?? toolbar.items.count
+            toolbar.insertItem(withItemIdentifier: identifier, at: index)
+        }
+
+        guard let item = toolbar.items.first(where: { $0.itemIdentifier == identifier }) else {
+            return
+        }
+        item.label = count == 1 ? "1 request blocked" : "\(count) requests blocked"
+        item.toolTip = item.label + " — click to allow for this document"
     }
 }
 

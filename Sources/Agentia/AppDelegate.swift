@@ -13,8 +13,7 @@ import AgentiaCore
 ///     log stream --predicate 'subsystem == "app.agentia"' --style compact
 enum Launch {
     static let log = OSLog(subsystem: "app.agentia", category: .pointsOfInterest)
-    static let signposter = OSSignposter(logHandle: Logger(subsystem: "app.agentia",
-                                                           category: "launch"))
+    static let signposter = OSSignposter(logHandle: log)
 
     static var processStart = Date()
     static var didLogFirstPaint = false
@@ -75,7 +74,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         webView = HardenedWebView()
 
         windowController = DocumentWindowController(webView: webView)
-        windowController.loadWindowIfNeeded()
 
         Launch.mark("webViewCreated")
     }

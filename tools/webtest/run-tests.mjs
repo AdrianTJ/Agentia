@@ -19,7 +19,9 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "output");
-const CLI = join(ROOT, ".build-cache", "ctest", "agentia_render_cli");
+// Built by `swift build`. Driving the real renderer rather than a JS
+// reimplementation is what keeps this suite honest about what the app ships.
+const CLI = join(ROOT, ".build", "debug", "agentia-render-cli");
 
 let checks = 0;
 let failures = 0;
@@ -37,7 +39,7 @@ function ok(condition, what, detail) {
 function renderMarkdown(path) {
   if (!existsSync(CLI)) {
     throw new Error(
-      `render CLI missing at ${CLI} — run tools/build-ctest.sh first`
+      `render CLI missing at ${CLI} — run \`swift build\` first`
     );
   }
   return execFileSync(CLI, [path], { encoding: "utf8", maxBuffer: 64 << 20 });
@@ -118,6 +120,21 @@ async function testSecurity(browser, fragment) {
   ok(!flags.scriptTagInDOM, "no script element survives into the document body");
   ok(flags.shellRan, "the pinned shell script DID run (CSP is not over-broad)");
 
+  // The old check was weak: nothing ever clicked the link, so the flag could
+  // never be set and the assertion was vacuous. Click it for real — shell.js
+  // must prevent the navigation before the browser considers a javascript:
+  // URL, and the page must not navigate anywhere.
+  const jsLink = page.locator('#agentia-doc a[href^="javascript:"]');
+  ok(await jsLink.count() >= 1, "fixture contains a javascript: link");
+  await jsLink.first().click();
+  await page.waitForTimeout(150);
+  const afterClick = await page.evaluate(() => ({
+    ran: typeof window.__agentiaJavascriptURLRan !== "undefined",
+    stillHere: !!document.getElementById("agentia-doc"),
+  }));
+  ok(!afterClick.ran, "clicking a javascript: link does not execute it");
+  ok(afterClick.stillHere, "clicking a javascript: link does not navigate away");
+
   // The CSP must not have been weakened to make the above pass.
   const csp = await page.evaluate(() => {
     const m = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
@@ -169,6 +186,7 @@ async function testShellBehaviour(browser, fragment) {
   ok(state.tables > 0, "fixture contains a table");
   ok(state.wrapped === state.tables, "every table is wrapped in a scroll container",
      `${state.wrapped}/${state.tables}`);
+  ok(state.pres > 0, "fixture contains code blocks");
   ok(state.copyButtons === state.pres, "every code block gets a copy button",
      `${state.copyButtons}/${state.pres}`);
   ok(state.withIds === state.headings, "every heading has an id for the outline",
@@ -386,7 +404,13 @@ async function testPrintAndPDF(browser, fragment, themes) {
 
     ok(header === "%PDF-", `${theme.id}: produced a valid PDF`);
     ok(bytes.length > 5000, `${theme.id}: PDF is not empty`, `${bytes.length} bytes`);
-    ok(pageCount >= 1, `${theme.id}: PDF has pages`, `${pageCount}`);
+    // The old check was a tautology — any valid PDF has at least one page, so
+    // it could never fail. The fixture is well over a sheet of content and
+    // measured at 2-4 pages across all six themes: a theme that squeezes the
+    // whole document onto one page has broken typography, and a page count
+    // past 8 means the sheet size collapsed (e.g. a bad @page width).
+    ok(pageCount >= 2, `${theme.id}: PDF paginates the document`, `${pageCount} pages`);
+    ok(pageCount <= 8, `${theme.id}: PDF has a sane page count`, `${pageCount} pages`);
 
     // The defect that matters most: content present on screen but missing from
     // the PDF because it ran off the edge of the sheet. Extract the text and
@@ -399,8 +423,13 @@ async function testPrintAndPDF(browser, fragment, themes) {
     // Collapsing all whitespace still proves the character sequence is there.
     const squashed = text.replace(/\s+/g, "");
     for (const marker of PDF_CONTENT_MARKERS) {
-      ok(squashed.includes(marker.replace(/\s+/g, "")),
-         `${theme.id}: PDF retains "${marker.slice(0, 34)}"`);
+      // Some fonts embed ligature glyphs with an empty ToUnicode map, so the
+      // "fi" of "fix" arrives as an empty string rather than "fi". The glyph
+      // is drawn — the content did not run off the sheet — so an empty item
+      // is treated as matching up to three marker characters (an "ffi" glyph).
+      const present = squashed.includes(marker.replace(/\s+/g, ""))
+        || looseLigatureMatch(squashed, marker.replace(/\s+/g, ""));
+      ok(present, `${theme.id}: PDF retains "${marker.slice(0, 34)}"`);
     }
 
     console.log(
@@ -436,10 +465,61 @@ async function extractPDFText(path) {
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
-    out += content.items.map((it) => it.str).join(" ") + "\n";
+    // A glyph drawn but with no usable Unicode mapping extracts as an empty
+    // string, or as a private-use character (U+E000–U+F8FF) when the font's
+    // cmap leaves the glyph unmapped — Iowan Old Style's "fi" arrives as
+    // U+F001. Both mean the glyph is laid out on the sheet but its text is
+    // unrecoverable, so both become a sentinel that looseLigatureMatch
+    // treats as a drawn glyph.
+    out += content.items
+      .map((it) => {
+        if (!it.str.length) return "\u{E000}";
+        return [...it.str].map((ch) => {
+          const cp = ch.codePointAt(0);
+          return (cp >= 0xE000 && cp <= 0xF8FF) ? "\u{E000}" : ch;
+        }).join("");
+      })
+      .join(" ") + "\n";
   }
   await doc.destroy();
   return out;
+}
+
+/* Does `pdf` (whitespace-stripped, sentinel-flagged unmapped glyphs) contain
+   `marker`? A sentinel stands for one glyph whose Unicode mapping is missing
+   from the PDF: an "fi"/"ffl" ligature (up to three characters), a soft
+   hyphen, or an extra space glyph where a line wrapped. Try every plausible
+   character count — including zero — so a single unmapped glyph cannot reject
+   content that is laid out; every other character must match exactly in
+   order. */
+function looseLigatureMatch(pdf, marker) {
+  const PLACEHOLDER = "\u{E000}";
+
+  function matchAt(start) {
+    function walk(p, m) {
+      while (m < marker.length) {
+        if (pdf[p] === PLACEHOLDER) {
+          // One glyph may represent 0–3 marker characters.
+          for (let take = 3; take >= 0; take--) {
+            if (walk(p + 1, m + take)) return true;
+          }
+          return false;
+        }
+        if (pdf[p] !== marker[m]) return false;
+        p += 1;
+        m += 1;
+      }
+      return true;
+    }
+    return walk(start, 0);
+  }
+
+  // Sentinels compress the string (one glyph for up to three characters), so
+  // a match can start at any position, even when pdf is shorter than marker.
+  for (let start = 0; start <= pdf.length; start++) {
+    if (matchAt(start)) return true;
+  }
+  return false;
 }
 
 /* ---------- 6. dark appearance ---------- */
@@ -491,6 +571,7 @@ async function testHTMLArtifactProfile(browser) {
     <h1>Dashboard</h1>
     <script>window.__artifactScriptRan = true;</script>
     <img src="https://remote.test/pixel.png" alt="remote beacon">
+    <a href="javascript:window.__artifactJSURLRan=true">a javascript: link</a>
   `;
 
   const html = buildPage({
@@ -510,6 +591,20 @@ async function testHTMLArtifactProfile(browser) {
 
   const ran = await page.evaluate(() => typeof window.__artifactScriptRan !== "undefined");
   ok(ran, "html artifact profile DOES run the document's own script");
+
+  // This profile allows unsafe-inline, so the page's own CSP cannot be what
+  // stops a javascript: URL. The only remaining guard is shell.js's
+  // interceptLinks preventDefault — clicking proves it, not just reads it.
+  const jsLink = page.locator('#agentia-doc a[href^="javascript:"]');
+  ok(await jsLink.count() >= 1, "artifact fixture contains a javascript: link");
+  await jsLink.first().click();
+  await page.waitForTimeout(150);
+  const afterClick = await page.evaluate(() => ({
+    ran: typeof window.__artifactJSURLRan !== "undefined",
+    stillHere: !!document.getElementById("agentia-doc"),
+  }));
+  ok(!afterClick.ran, "artifact: clicking a javascript: link does not execute it");
+  ok(afterClick.stillHere, "artifact: clicking a javascript: link does not navigate away");
 
   const csp = await page.evaluate(() => {
     const m = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
