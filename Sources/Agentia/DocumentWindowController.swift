@@ -77,6 +77,12 @@ final class DocumentWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.minSize = NSSize(width: 520, height: 380)
 
+        // The app now outlives its window (see
+        // applicationShouldTerminateAfterLastWindowClosed), so closing must not
+        // deallocate it — the Dock-icon reopen path shows this same window
+        // again, with the document still loaded in the web view.
+        window.isReleasedWhenClosed = false
+
         webView.autoresizingMask = [.width, .height]
         window.contentView = webView
 
