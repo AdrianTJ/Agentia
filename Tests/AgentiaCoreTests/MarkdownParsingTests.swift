@@ -40,7 +40,14 @@ final class MarkdownParsingTests: XCTestCase {
         let html = try render("```swift\nlet x = 1\n```\n")
         XCTAssertTrue(html.contains("<pre"), "fenced block produces pre")
         XCTAssertTrue(html.contains("language-swift"), "info string becomes a class")
-        XCTAssertTrue(html.contains("let x = 1"), "code content preserved")
+
+        // The code is no longer one contiguous run: syntax highlighting wraps
+        // tokens in spans. Strip them and the original must be intact — that
+        // the text survives is the thing this test is actually about.
+        let stripped = html.replacingOccurrences(
+            of: "<span class=\"tok-[a-z]+\">|</span>",
+            with: "", options: .regularExpression)
+        XCTAssertTrue(stripped.contains("let x = 1"), "code content preserved")
     }
 
     func testLists() throws {

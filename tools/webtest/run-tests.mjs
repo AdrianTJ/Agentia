@@ -206,6 +206,32 @@ async function testShellBehaviour(browser, fragment) {
   ok(state.wrapperKeepsSourcePos,
      "table wrapper carries data-sourcepos so diff still finds it");
 
+  /* Syntax highlighting arrives as markup from SyntaxHighlighter, not from a
+     script — the markdown profile pins script-src to shell.js's hash, so a
+     highlighter running in the page could not execute. These checks confirm
+     the spans are present AND actually painted: a token class that resolves to
+     the body colour is highlighting that silently did nothing. */
+  const tokens = await page.evaluate(() => {
+    const doc = document.getElementById("agentia-doc");
+    const spans = [...doc.querySelectorAll("pre code [class^='tok-']")];
+    const body = getComputedStyle(document.body).color;
+    return {
+      count: spans.length,
+      classes: [...new Set(spans.map((s) => s.className))].sort(),
+      distinctColours: new Set(spans.map((s) => getComputedStyle(s).color)).size,
+      allDefaultColoured: spans.every((s) => getComputedStyle(s).color === body),
+      // Highlighting must not have changed the code itself.
+      text: doc.querySelector("pre code").textContent,
+    };
+  });
+
+  ok(tokens.count > 0, "fenced code with a language gets syntax spans");
+  ok(tokens.distinctColours > 1,
+     "tokens are painted in more than one colour", `${tokens.distinctColours}`);
+  ok(!tokens.allDefaultColoured, "token classes resolve to real colours");
+  ok(!/&(amp|lt|gt|quot);/.test(tokens.text),
+     "code text is not double-escaped by highlighting", tokens.text.slice(0, 60));
+
   await page.close();
 }
 

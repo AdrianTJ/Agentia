@@ -37,6 +37,16 @@
   --diff-mod-bg: #a8681f14;
   --diff-del: #a8474a;
   --diff-del-bg: #a8474a12;
+
+  /* Syntax tokens. Muted on purpose: an artifact is read for its prose, and a
+     code block that shouts pulls the eye out of the argument. Hue carries the
+     distinction, not saturation. */
+  --tok-keyword: #8250a8;
+  --tok-string: #2f7350;
+  --tok-comment: #7c828c;
+  --tok-number: #a8681f;
+  --tok-type: #2f6272;
+  --tok-function: #34568c;
 }
 
 html[data-appearance="dark"] {
@@ -56,6 +66,13 @@ html[data-appearance="dark"] {
   --diff-mod-bg: #d99a4a18;
   --diff-del: #dd8c88;
   --diff-del-bg: #dd8c8816;
+
+  --tok-keyword: #c99ae8;
+  --tok-string: #7fc7a0;
+  --tok-comment: #7d838d;
+  --tok-number: #e0a45e;
+  --tok-type: #7bb6c8;
+  --tok-function: #8ab2e8;
 }
 
 * { box-sizing: border-box; }
@@ -396,4 +413,25 @@ body {
     background: none;
     border-left: 2px solid #999;
   }
+}
+
+/* ---- syntax highlighting, emitted by SyntaxHighlighter at render time ----
+   No JavaScript is involved: the markdown profile pins script-src to the hash
+   of shell.js, so highlighting has to arrive as markup or not at all. */
+.doc pre code .tok-keyword  { color: var(--tok-keyword); }
+.doc pre code .tok-string   { color: var(--tok-string); }
+.doc pre code .tok-comment  { color: var(--tok-comment); font-style: italic; }
+.doc pre code .tok-number   { color: var(--tok-number); }
+.doc pre code .tok-type     { color: var(--tok-type); }
+.doc pre code .tok-function { color: var(--tok-function); }
+
+/* Printing is monochrome often enough that colour alone cannot carry meaning,
+   and a grey comment on a laser printer is close to invisible. */
+@media print {
+  .doc pre code .tok-keyword,
+  .doc pre code .tok-type,
+  .doc pre code .tok-function { color: inherit; font-weight: 600; }
+  .doc pre code .tok-string,
+  .doc pre code .tok-number { color: inherit; }
+  .doc pre code .tok-comment { color: inherit; font-style: italic; }
 }

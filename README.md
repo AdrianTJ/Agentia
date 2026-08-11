@@ -84,8 +84,8 @@ layer.
 
 ```bash
 swift build                           # core, app, and the render CLI
-swift test                            # 152 checks, green in debug and release
-node tools/webtest/run-tests.mjs      # render shell in real Chromium — 177 checks
+swift test                            # 168 checks, green in debug and release
+node tools/webtest/run-tests.mjs      # render shell in real Chromium — 181 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 tools/make-app.sh                     # builds .build/Agentia.app
 ```
@@ -105,9 +105,9 @@ Being honest about this matters more than looking finished.
 | Layer | Status |
 | --- | --- |
 | Parsing core | **Tested.** 51 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
-| Render shell, themes, print CSS | **Tested in a real browser.** 177 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
+| Render shell, themes, print CSS | **Tested in a real browser.** 181 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
 | Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors, plus XCTest |
-| AgentiaCore Swift | **Tested.** 152 XCTest cases, run in both debug and release |
+| AgentiaCore Swift | **Tested.** 168 XCTest cases, run in both debug and release |
 | macOS app layer | **Partly tested.** The navigation guard moved into AgentiaCore so it could be; the rest is AppKit and WebKit wiring, verified by use |
 
 Two harnesses exist to keep implementations that must agree from drifting:
@@ -222,6 +222,11 @@ blocks so it cannot pass by having nothing to count.
 
 ## Not built yet
 
-Sidebar document list and folder mode, find bar UI, send-to-app menu, Quick Look extension,
-syntax highlighting, Mermaid and KaTeX behind a per-document opt-in, App Intents, notarisation
-and Sparkle.
+Folder mode, Quick Look extension, Mermaid and KaTeX behind a per-document opt-in,
+App Intents, notarisation and Sparkle.
+
+Syntax highlighting is native and lexical — `SyntaxHighlighter` in AgentiaCore, one tokeniser
+driven by a small table per language. The proposal named tree-sitter; that would mean the
+tree-sitter runtime plus a C grammar per language, which is a lot of vendored C to re-acquire
+in a project that just finished removing its own, to build parse trees nothing here needs.
+`Language.spec(for:)` is the only thing a tree-sitter backend would have to replace.

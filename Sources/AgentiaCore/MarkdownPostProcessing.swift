@@ -185,6 +185,84 @@ enum FootnoteBackref {
     }
 }
 
+// MARK: - Code highlighting
+
+/// Colours the inside of `<pre><code class="language-…">` blocks.
+///
+/// Done on cmark's output rather than on its AST so that `data-sourcepos`
+/// survives: it lives on the `<pre>`, the diff view depends on it, and
+/// rewriting the node would drop it.
+///
+/// Only the text between `<code …>` and `</code>` is touched, and it is
+/// unescaped, highlighted, and re-escaped as one step — so every character
+/// still passes through exactly one escaping. Double-escaping would surface as
+/// `&amp;lt;` on screen; skipping one would be an injection into a document the
+/// CSP is holding at arm's length.
+enum CodeHighlighting {
+
+    private static let opener = "<code class=\"language-"
+
+    static func apply(to html: String) -> String {
+        guard html.contains(opener) else { return html }
+
+        var out = ""
+        out.reserveCapacity(html.count + 512)
+
+        var cursor = html.startIndex
+        while let start = html.range(of: opener, range: cursor..<html.endIndex) {
+            // The language runs to the closing quote of the class attribute.
+            guard let quote = html[start.upperBound...].firstIndex(of: "\""),
+                  let tagEnd = html[quote...].firstIndex(of: ">"),
+                  let close = html.range(of: "</code>",
+                                         range: tagEnd..<html.endIndex)
+            else { break }
+
+            let language = String(html[start.upperBound..<quote])
+            let bodyStart = html.index(after: tagEnd)
+            let body = String(html[bodyStart..<close.lowerBound])
+
+            out += html[cursor..<bodyStart]
+            if let highlighted = SyntaxHighlighter.highlight(unescape(body),
+                                                             language: language) {
+                out += highlighted
+            } else {
+                out += body
+            }
+            out += "</code>"
+            cursor = close.upperBound
+        }
+
+        out += html[cursor...]
+        return out
+    }
+
+    /// Reverses exactly what cmark escapes in a code block, left to right so
+    /// `&amp;lt;` comes back as the literal `&lt;` rather than as `<`.
+    static func unescape(_ text: String) -> String {
+        var out = ""
+        out.reserveCapacity(text.count)
+
+        var i = text.startIndex
+        while i < text.endIndex {
+            guard text[i] == "&" else {
+                out.append(text[i])
+                i = text.index(after: i)
+                continue
+            }
+            let entities = [("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+                            ("&quot;", "\""), ("&#39;", "'")]
+            if let match = entities.first(where: { text[i...].hasPrefix($0.0) }) {
+                out += match.1
+                i = text.index(i, offsetBy: match.0.count)
+            } else {
+                out.append(text[i])
+                i = text.index(after: i)
+            }
+        }
+        return out
+    }
+}
+
 // MARK: - Structural tag neutralisation
 
 /// Escapes tags that are meaningless inside a fragment and dangerous when the
