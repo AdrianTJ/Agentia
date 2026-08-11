@@ -49,6 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// explanation. Debug builds usually mask it, which is the worst case.
     private static var retainedDelegate: AppDelegate?
 
+    /// NSMenu holds its delegate weakly, so without this the Open With submenu
+    /// would populate itself exactly once and then silently stop.
+    private var openWithMenuDelegate: OpenWithMenu?
+
     static func main() {
         Launch.processStart = Date()
         let app = NSApplication.shared
@@ -179,6 +183,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(withTitle: "Reveal in Finder",
                          action: #selector(DocumentWindowController.revealInFinder(_:)),
                          keyEquivalent: "r")
+        fileMenu.addItem(.separator())
+
+        // Populated when the submenu opens: the handler list depends on the
+        // document, and asking Launch Services is not free.
+        let openWith = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        let openWithMenu = NSMenu(title: "Open With")
+        let openWithDelegate = OpenWithMenu(controller: windowController)
+        openWithMenu.delegate = openWithDelegate
+        openWithMenuDelegate = openWithDelegate
+        openWith.submenu = openWithMenu
+        fileMenu.addItem(openWith)
+
+        fileMenu.addItem(withTitle: "Share…",
+                         action: #selector(DocumentWindowController.shareDocument(_:)),
+                         keyEquivalent: "")
         fileItem.submenu = fileMenu
         mainMenu.addItem(fileItem)
 

@@ -151,6 +151,7 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
         static let copy = NSToolbarItem.Identifier("copy")
         static let pdf = NSToolbarItem.Identifier("pdf")
         static let reveal = NSToolbarItem.Identifier("reveal")
+        static let share = NSToolbarItem.Identifier("share")
         static let blocked = NSToolbarItem.Identifier("blocked")
     }
 
@@ -165,7 +166,7 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [ItemID.sidebar, .flexibleSpace, ItemID.blocked, ItemID.viewMode,
-         ItemID.copy, ItemID.pdf, ItemID.reveal]
+         ItemID.copy, ItemID.share, ItemID.pdf, ItemID.reveal]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -191,6 +192,9 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
         case ItemID.pdf:
             return button(identifier, symbol: "arrow.down.doc", label: "Export PDF",
                           action: #selector(DocumentWindowController.exportPDF(_:)))
+        case ItemID.share:
+            return button(identifier, symbol: "square.and.arrow.up", label: "Share",
+                          action: #selector(DocumentWindowController.shareDocument(_:)))
         case ItemID.reveal:
             return button(identifier, symbol: "folder", label: "Reveal in Finder",
                           action: #selector(DocumentWindowController.revealInFinder(_:)))

@@ -416,6 +416,27 @@ final class DocumentWindowController: NSWindowController {
         }
     }
 
+    /// The document on disk, for the routes that hand a file to another app.
+    var documentURL: URL? { snapshot?.url }
+
+    /// The system share sheet: Mail, Messages, AirDrop, Notes and every
+    /// installed share extension, without Agentia knowing about any of them.
+    ///
+    /// Shares the file rather than the rendered text, so the recipient gets
+    /// something they can open — and so nothing has to decide which of the
+    /// document's representations to send.
+    @objc func shareDocument(_ sender: Any?) {
+        guard let url = documentURL else { return }
+
+        let picker = NSSharingServicePicker(items: [url])
+        let anchor: NSView? = (sender as? NSView)
+            ?? (sender as? NSToolbarItem)?.view
+            ?? window?.contentView
+
+        guard let anchor else { return }
+        picker.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+    }
+
     @objc func revealInFinder(_ sender: Any?) {
         guard let url = snapshot?.url else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -515,7 +536,8 @@ extension DocumentWindowController: NSMenuItemValidation, NSToolbarItemValidatio
         case #selector(toggleDiff(_:)):
             return canShowDiff
         case #selector(exportPDF(_:)), #selector(copyAll(_:)),
-             #selector(revealInFinder(_:)), #selector(performFind(_:)):
+             #selector(revealInFinder(_:)), #selector(performFind(_:)),
+             #selector(shareDocument(_:)):
             return snapshot != nil
         case #selector(toggleSource(_:)):
             // Source view works for anything, including an HTML artifact — it
