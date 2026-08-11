@@ -22,51 +22,41 @@ public enum DocumentSaving {
         case missing
     }
 
-    /// Compare what we recorded at read time against what is on disk now.
+    /// Is the file still the one we read?
     ///
-    /// Modification date and size together, not a content hash: hashing a file
-    /// on every save costs the whole file, and this check runs on the main
-    /// thread in front of the reader. The pair catches every case that matters
-    /// here — an agent rewriting a report changes both, and a same-size,
-    /// same-second rewrite is not a scenario worth making saves slower for.
+    /// Compares the *bytes* on disk against the bytes the document was read
+    /// from, rather than a modification date and size.
     ///
-    /// A missing modification date is treated as `changedOnDisk` rather than
-    /// `safe`: not knowing must fail toward asking, never toward overwriting.
-    public static func verdict(
-        recordedModification: Date?,
-        recordedSize: Int?,
-        currentModification: Date?,
-        currentSize: Int?,
-        fileExists: Bool
-    ) -> Verdict {
+    /// The metadata version had a real hole: dates were compared at whole-second
+    /// resolution, because some filesystems store only that. So a rewrite
+    /// landing in the same second as the read, producing content of the same
+    /// length, was indistinguishable from no rewrite at all and got silently
+    /// overwritten — and an agent rewriting its report in a tight loop is
+    /// exactly how that happens. Comparing content has no such window: it is
+    /// the actual question, asked directly.
+    ///
+    /// The cost is reading the file once per save. It was already read once to
+    /// open it, and these are documents a person is reading.
+    ///
+    /// Unreadable bytes count as changed: not knowing must fail toward asking,
+    /// never toward overwriting.
+    public static func verdict(recordedBytes: Data?, currentBytes: Data?, fileExists: Bool) -> Verdict {
         guard fileExists else { return .missing }
-
-        guard let recordedModification, let currentModification,
-              let recordedSize, let currentSize else {
-            return .changedOnDisk
-        }
-
-        // Compared at whole-second resolution: some filesystems store only
-        // that, so a sub-second difference is noise rather than a rewrite.
-        let sameTime = Int(recordedModification.timeIntervalSince1970)
-            == Int(currentModification.timeIntervalSince1970)
-        return sameTime && recordedSize == currentSize ? .safe : .changedOnDisk
+        guard let recordedBytes, let currentBytes else { return .changedOnDisk }
+        return recordedBytes == currentBytes ? .safe : .changedOnDisk
     }
 
-    /// What the file looks like right now, for the comparison above.
+    /// The bytes on disk right now, and whether the file is there at all.
     ///
-    /// Deliberately stats a *freshly constructed* URL. `URL` caches resource
-    /// values, and asking the same instance twice returns what it saw the first
-    /// time — so a file rewritten between the read and the save reported its
-    /// old date and size, and the verdict came back `.safe`. That is the one
-    /// direction this must never fail in: it would have silently overwritten
-    /// the agent's work. Caught by a test that rewrote a real file on disk;
-    /// every in-memory case passed happily.
-    public static func fingerprint(of url: URL) -> (modified: Date?, size: Int?, exists: Bool) {
-        let uncached = URL(fileURLWithPath: url.path)
-        let values = try? uncached.resourceValues(
-            forKeys: [.contentModificationDateKey, .fileSizeKey])
-        let exists = FileManager.default.fileExists(atPath: uncached.path)
-        return (values?.contentModificationDate, values?.fileSize, exists)
+    /// Reads through a freshly constructed URL. `URL` caches resource values,
+    /// and the metadata version of this check was defeated by exactly that: a
+    /// file rewritten between the read and the save reported its old date and
+    /// size, so the verdict came back `.safe` and the agent's work was
+    /// overwritten silently. Content is read directly and cannot go stale, but
+    /// the fresh URL is kept so nothing here depends on cache behaviour.
+    public static func currentBytes(of url: URL) -> (bytes: Data?, exists: Bool) {
+        let fresh = URL(fileURLWithPath: url.path)
+        let exists = FileManager.default.fileExists(atPath: fresh.path)
+        return (try? Data(contentsOf: fresh), exists)
     }
 }

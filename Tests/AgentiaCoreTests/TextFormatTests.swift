@@ -56,6 +56,58 @@ final class TextFormatTests: XCTestCase {
         roundTrip(Array("\n\n\n".utf8))
     }
 
+    /// A whole encoding family was undetected: UTF-16 files read as Latin-1
+    /// mojibake, or — worse, with no BOM and ASCII content — as *valid UTF-8*
+    /// with a NUL after every character. Saving either would have rewritten the
+    /// file to one byte per character, unreadable by anything expecting UTF-16.
+    func testUTF16RoundTrips() {
+        let text = "# Title\n\ncafé — 日本語\n"
+
+        for (mark, encoding, name) in [
+            (TextFormat.utf16LEBOM, String.Encoding.utf16LittleEndian, "LE with BOM"),
+            (TextFormat.utf16BEBOM, String.Encoding.utf16BigEndian, "BE with BOM"),
+        ] {
+            let bytes = Data(mark) + text.data(using: encoding)!
+            guard let decoded = TextFormat.decode(bytes) else {
+                XCTFail("\(name): did not decode"); continue
+            }
+            XCTAssertEqual(decoded.text, text, "\(name): wrong text")
+            XCTAssertEqual(decoded.format.encoding, encoding, "\(name): wrong encoding")
+            XCTAssertEqual(decoded.format.encode(decoded.text), bytes,
+                           "\(name): save changed the file")
+        }
+    }
+
+    /// The nastiest case: BOM-less UTF-16 of pure ASCII is also valid UTF-8.
+    /// It has to be recognised by the NUL bytes, since no Markdown document
+    /// contains one.
+    func testBOMlessUTF16IsNotMistakenForUTF8() {
+        let text = "# Title\n"
+        let bytes = text.data(using: .utf16LittleEndian)!
+
+        guard let decoded = TextFormat.decode(bytes) else {
+            return XCTFail("did not decode")
+        }
+        XCTAssertEqual(decoded.text, text)
+        XCTAssertFalse(decoded.text.utf8.contains(0),
+                       "a NUL after every character means UTF-16 was read as UTF-8")
+        XCTAssertEqual(decoded.format.encode(decoded.text), bytes,
+                       "save must not collapse it to one byte per character")
+    }
+
+    /// Ordinary UTF-8 must not be dragged into the UTF-16 path by the new
+    /// heuristic.
+    func testPlainUTF8IsStillReadAsUTF8() {
+        for sample in ["# Title\n", "a\n", "", "日本語\n", "x"] {
+            let bytes = Data(sample.utf8)
+            guard let decoded = TextFormat.decode(bytes) else {
+                XCTFail("\(sample.debugDescription) did not decode"); continue
+            }
+            XCTAssertEqual(decoded.format.encoding, .utf8, sample.debugDescription)
+            XCTAssertEqual(decoded.format.encode(decoded.text), bytes)
+        }
+    }
+
     func testEmptyFileRoundTrips() {
         roundTrip([])
     }
@@ -77,8 +129,13 @@ final class TextFormatTests: XCTestCase {
     func testFormatIsNamedForTheMessageShownOnRefusal() {
         XCTAssertEqual(TextFormat(encoding: .isoLatin1).displayName, "ISO Latin-1")
         XCTAssertEqual(TextFormat.utf8.displayName, "UTF-8")
-        XCTAssertEqual(TextFormat(encoding: .utf8, hasByteOrderMark: true).displayName,
-                       "UTF-8 with BOM")
+        XCTAssertEqual(
+            TextFormat(encoding: .utf8, byteOrderMark: TextFormat.utf8BOM).displayName,
+            "UTF-8 with BOM")
+        XCTAssertEqual(
+            TextFormat(encoding: .utf16LittleEndian,
+                       byteOrderMark: TextFormat.utf16LEBOM).displayName,
+            "UTF-16 LE with BOM")
     }
 
     /// The snapshot has to carry the format, or the save cannot use it.

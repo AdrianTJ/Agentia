@@ -9,11 +9,10 @@ public struct DocumentSnapshot: Sendable, Equatable {
     /// When the bytes were read, for the "changed since" label.
     public let readAt: Date
 
-    /// What the file looked like when it was read, so a save can tell whether
-    /// anything rewrote it in the meantime. Nil when the file could not be
-    /// stat'd, which the save path treats as "assume it changed".
-    public let modifiedOnDisk: Date?
-    public let sizeOnDisk: Int?
+    /// The exact bytes this document was read from, so a save can tell whether
+    /// anything rewrote the file in the meantime. Nil only when it could not be
+    /// read, which the save path treats as "assume it changed".
+    public let bytesOnDisk: Data?
 
     /// How the bytes were encoded, so a save reproduces the same file rather
     /// than a differently-encoded one. See TextFormat.
@@ -24,16 +23,14 @@ public struct DocumentSnapshot: Sendable, Equatable {
         kind: DocumentKind,
         source: String,
         readAt: Date = Date(),
-        modifiedOnDisk: Date? = nil,
-        sizeOnDisk: Int? = nil,
+        bytesOnDisk: Data? = nil,
         format: TextFormat = .utf8
     ) {
         self.url = url
         self.kind = kind
         self.source = source
         self.readAt = readAt
-        self.modifiedOnDisk = modifiedOnDisk
-        self.sizeOnDisk = sizeOnDisk
+        self.bytesOnDisk = bytesOnDisk
         self.format = format
     }
 
@@ -75,13 +72,10 @@ public struct DocumentRenderer: Sendable {
         }
         let text = decoded.text
 
-        // Taken after the read, not before: a file rewritten *during* the read
-        // must look changed at save time, not identical.
-        let fingerprint = DocumentSaving.fingerprint(of: url)
-
+        // The bytes just read are what a later save compares against, so a
+        // rewrite that lands between now and then is always visible.
         return DocumentSnapshot(url: url, kind: .forURL(url), source: text,
-                                modifiedOnDisk: fingerprint.modified,
-                                sizeOnDisk: fingerprint.size,
+                                bytesOnDisk: data,
                                 format: decoded.format)
     }
 

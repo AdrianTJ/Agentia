@@ -86,6 +86,42 @@ final class SourceEditor: NSView {
         window?.makeFirstResponder(textView)
     }
 
+    /// Search the buffer, wrapping, and select the match.
+    ///
+    /// The find bar drives `WKWebView.find` for the rendered document, which
+    /// searches a hidden — and possibly stale — web view while source mode is
+    /// showing. In source mode the text the reader is looking at is here.
+    func find(_ query: String, forward: Bool) -> Bool {
+        guard !query.isEmpty else { return true }
+
+        let text = textView.string as NSString
+        let selection = textView.selectedRange()
+        let options: NSString.CompareOptions = forward
+            ? [.caseInsensitive]
+            : [.caseInsensitive, .backwards]
+
+        // Search from just past the current match, so repeated presses advance
+        // rather than finding the same one.
+        let after = NSRange(location: NSMaxRange(selection),
+                            length: text.length - NSMaxRange(selection))
+        let before = NSRange(location: 0, length: selection.location)
+        let (first, wrapped) = forward
+            ? (after, NSRange(location: 0, length: text.length))
+            : (before, NSRange(location: 0, length: text.length))
+
+        var found = text.range(of: query, options: options, range: first)
+        if found.location == NSNotFound {
+            // Wrap, matching the rendered view's behaviour.
+            found = text.range(of: query, options: options, range: wrapped)
+        }
+        guard found.location != NSNotFound else { return false }
+
+        textView.setSelectedRange(found)
+        textView.scrollRangeToVisible(found)
+        textView.showFindIndicator(for: found)
+        return true
+    }
+
     /// Match the reader's chosen text size, so source view is legible at the
     /// same setting the rendered view uses.
     func applyFontScale(_ scale: Double) {

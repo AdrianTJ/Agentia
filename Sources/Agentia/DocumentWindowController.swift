@@ -220,6 +220,27 @@ final class DocumentWindowController: NSWindowController {
     // MARK: - Opening
 
     func open(_ url: URL) {
+        // Unsaved edits belong to the document that is open now, so switching
+        // has to settle them first.
+        //
+        // Without this the editor kept the old document's text while `snapshot`
+        // became the new one — and a later ⌘S wrote the *old* file's edits into
+        // the *new* file's path, destroying a third document that was never
+        // touched. The conflict check could not catch it either: it compares
+        // the new file against its own fingerprint, which nothing had changed.
+        //
+        // Guarded here rather than at the call sites, because there are three —
+        // the sidebar, ⌘O, and a Finder open while already running — and a
+        // fourth would have inherited the bug.
+        guard !canSave || url == snapshot?.url else {
+            confirmDiscardingEdits { [weak self] proceed in
+                guard proceed else { return }
+                self?.discardEdits()
+                self?.open(url)
+            }
+            return
+        }
+
         do {
             let snapshot = try DocumentRenderer.read(contentsOf: url)
 
@@ -500,6 +521,14 @@ final class DocumentWindowController: NSWindowController {
 
     @objc func exportPDF(_ sender: Any?) {
         guard let snapshot, let theme else { return }
+
+        // A PDF is always of the rendered document — that is what the themes
+        // and the print CSS are for. Exporting from source mode used to print
+        // the hidden web view, which could still be showing the pre-edit page.
+        if mode != .rendered {
+            mode = .rendered
+            render()
+        }
         let settings = PDFExporter.Settings.from(theme: theme,
                                                  documentName: snapshot.displayName)
         let suggested = snapshot.url.deletingPathExtension().lastPathComponent + ".pdf"
@@ -547,12 +576,10 @@ final class DocumentWindowController: NSWindowController {
 
         // Has anything rewritten the file since it was read? The decision lives
         // in AgentiaCore so it can be tested; this is only the wiring.
-        let now = DocumentSaving.fingerprint(of: snapshot.url)
+        let now = DocumentSaving.currentBytes(of: snapshot.url)
         let verdict = DocumentSaving.verdict(
-            recordedModification: snapshot.modifiedOnDisk,
-            recordedSize: snapshot.sizeOnDisk,
-            currentModification: now.modified,
-            currentSize: now.size,
+            recordedBytes: snapshot.bytesOnDisk,
+            currentBytes: now.bytes,
             fileExists: now.exists
         )
 
@@ -632,6 +659,31 @@ final class DocumentWindowController: NSWindowController {
         let destination = URL(fileURLWithPath:
             (url.path as NSString).resolvingSymlinksInPath)
 
+        // An atomic write is a write-then-rename, which needs permission on the
+        // *directory*, not the file — so a file the reader deliberately marked
+        // read-only saved anyway, silently. Checked explicitly rather than left
+        // to fail, because it never fails.
+        if FileManager.default.fileExists(atPath: destination.path),
+           !FileManager.default.isWritableFile(atPath: destination.path) {
+            confirm(
+                title: "This file is marked read-only",
+                message: """
+                \(destination.lastPathComponent) has its permissions set to \
+                read-only. Saving changes it anyway.
+                """,
+                destructive: "Save Anyway",
+                alternative: nil
+            ) { [weak self] choice in
+                guard choice == .destructive else { return }
+                self?.performWrite(data, to: destination, url: url)
+            }
+            return
+        }
+
+        performWrite(data, to: destination, url: url)
+    }
+
+    private func performWrite(_ data: Data, to destination: URL, url: URL) {
         do {
             try data.write(to: destination, options: .atomic)
         } catch {
@@ -643,17 +695,26 @@ final class DocumentWindowController: NSWindowController {
         // new modification date and size, so the next save compares against
         // what was actually written.
         if let fresh = try? DocumentRenderer.read(contentsOf: url) {
-            // The saved text becomes the diff baseline. A reader who edits and
-            // saves has not "changed the document since the last run" in the
-            // sense the diff view means.
-            previousSource = snapshot?.source
-            baselineTakenAt = Self.clockFormatter.string(from: Date())
+            // The diff baseline is cleared, not advanced. Diff means "what
+            // changed since the last run", and the reader's own edit is not
+            // that — arming it here showed them their own typing as though an
+            // agent had rewritten the file, with a timestamp to match. It comes
+            // back on the next external write, which is what it is for.
+            previousSource = nil
+            baselineTakenAt = nil
+            if mode == .diff { mode = .rendered }
             snapshot = fresh
         }
 
         sourceEditor?.markSaved()
         updateSaveState()
         startWatching(url)   // safe to watch again: buffer and file agree
+
+        // Re-render, or the rendered view keeps showing the pre-edit document
+        // after a save made from it. Skipped in source mode: the editor already
+        // holds exactly what was written, and reloading it there would throw
+        // away the caret and scroll position for no visible gain.
+        if mode != .source { render() }
     }
 
     /// Ask before losing unsaved edits, and report whether it is safe to go on.
@@ -786,6 +847,13 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func runFind(_ query: String, forward: Bool) {
+        // Source mode is a text view, not the web view — searching the latter
+        // would search something hidden, and possibly stale.
+        if mode == .source, let sourceEditor {
+            findBar?.report(found: sourceEditor.find(query, forward: forward))
+            return
+        }
+
         // Clearing the field must clear the highlight, not just the status.
         // Otherwise backspacing a matched query to empty leaves the document
         // speckled with matches until the bar is dismissed — the same "looks
@@ -839,6 +907,13 @@ final class DocumentWindowController: NSWindowController {
     /// tested — the id comes from the document, and this runs with the host's
     /// authority.
     func scrollToHeading(id: String) {
+        // The outline describes the rendered document, so jumping to a heading
+        // means going back to it. Previously this ran against a hidden web view
+        // and appeared to do nothing.
+        if mode != .rendered {
+            mode = .rendered
+            render()
+        }
         guard let script = PageScript.scrollToElement(id: id) else { return }
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
