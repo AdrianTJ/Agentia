@@ -87,6 +87,7 @@ async function main() {
     await testDarkAppearance(browser, fragment);
     await testHTMLArtifactProfile(browser);
     await testDocumentCannotNavigate(browser);
+    await testTextSize(browser, fragment, themes);
   } finally {
     await browser.close();
   }
@@ -852,3 +853,72 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+/* ---------- 9. reader text size ---------- */
+
+async function testTextSize(browser, fragment, themes) {
+  console.log("text size");
+
+  const read = async (themeId, fontScale, media) => {
+    const page = await browser.newPage();
+    await page.setContent(
+      buildPage({ content: fragment, themeId, title: "Size", fontScale }),
+      { waitUntil: "load" }
+    );
+    if (media) await page.emulateMedia({ media });
+    const out = await page.evaluate(() => {
+      const pre = document.querySelector(".doc pre");
+      const code = document.querySelector(".doc p code") || document.querySelector(".doc code");
+      return {
+        body: parseFloat(getComputedStyle(document.body).fontSize),
+        pre: pre ? parseFloat(getComputedStyle(pre).fontSize) : 0,
+        inline: code ? parseFloat(getComputedStyle(code).fontSize) : 0,
+        overflow: document.documentElement.scrollWidth
+          - document.documentElement.clientWidth,
+      };
+    });
+    await page.close();
+    return out;
+  };
+
+  // Every theme keeps its own size and all of them move together. A theme that
+  // does not scale is a theme the preference silently does not apply to.
+  for (const theme of themes) {
+    const one = await read(theme.id, 1);
+    const two = await read(theme.id, 2);
+
+    ok(Math.abs(two.body / one.body - 2) < 0.02,
+       `${theme.id}: body text scales`, `${one.body} -> ${two.body}`);
+
+    // Code blocks used to be a hardcoded px and stayed put while the prose
+    // around them doubled — the worst case for a reader who enlarged the text
+    // precisely to read code more comfortably.
+    ok(Math.abs(two.pre / one.pre - 2) < 0.02,
+       `${theme.id}: fenced code scales with the body`,
+       `${one.pre} -> ${two.pre}`);
+    ok(Math.abs(two.inline / one.inline - 2) < 0.02,
+       `${theme.id}: inline code scales with the body`,
+       `${one.inline} -> ${two.inline}`);
+
+    ok(two.overflow <= 1,
+       `${theme.id}: no horizontal overflow at 2x`, `${two.overflow}px`);
+  }
+
+  // Themes must not all collapse to one size — that would mean the scale had
+  // replaced the theme's choice rather than multiplied it.
+  const sizes = [];
+  for (const theme of themes) sizes.push((await read(theme.id, 1.5)).body);
+  ok(new Set(sizes).size > 1,
+     "themes keep distinct sizes under a scale", sizes.join(", "));
+
+  // Paper is a fixed size: scaling there lengthens the document rather than
+  // aiding reading.
+  const printed = await read("manuscript", 2, "print");
+  const printedPlain = await read("manuscript", 1, "print");
+  ok(Math.abs(printed.body - printedPlain.body) < 0.5,
+     "print ignores the reader's text size",
+     `${printedPlain.body} vs ${printed.body}`);
+
+  ok((await read("manuscript", 1)).body !== printed.body,
+     "and the preference still applies on screen");
+}

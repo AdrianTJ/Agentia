@@ -162,7 +162,10 @@ export function buildPage({
 export function displayCSS(fontScale = 1) {
   const scale = Math.min(Math.max(fontScale, 0.7), 2.0);
   if (scale === 1) return "";
-  return `:root{--agentia-scale:${scale.toFixed(4)}}`;
+  // The print reset ships with the scale, not in base.css: this block is
+  // written later at the same specificity, so a reset there loses to it.
+  return `:root{--agentia-scale:${scale.toFixed(4)}}`
+    + "@media print{:root{--agentia-scale:1}}";
 }
 
 /**

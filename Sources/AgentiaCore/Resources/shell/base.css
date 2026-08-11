@@ -169,7 +169,14 @@ body {
 
 .doc pre {
   font-family: var(--font-mono);
-  font-size: 13px;
+  /* Relative to the body, so it moves with the reader's text-size preference.
+     This was a hardcoded 13px, which meant a reader who enlarged the text got
+     no relief in exactly the documents that need it most: agent output is
+     prose wrapped around code, and a heading at 2x above a code block still at
+     13px is a jarring mismatch rather than a larger document. Inline `code`
+     was already em-relative and scaled correctly — only multiline blocks were
+     pinned. */
+  font-size: 0.79em;
   line-height: 1.6;
   background: var(--bg-sunken);
   border: 1px solid var(--rule-soft);
@@ -330,6 +337,12 @@ body {
    are the ones that must hold regardless of theme.
    ===================================================================== */
 @media print {
+  /* The print reset for --agentia-scale is NOT here: it is emitted alongside
+     the scale itself in RenderShell.Display.css. A reset in this file loses to
+     the preference, which the shell writes into a later <style> block at the
+     same specificity. Putting both in the same declaration removes the
+     ordering question entirely. */
+
   html, body {
     background: #fff;
     color: #000;

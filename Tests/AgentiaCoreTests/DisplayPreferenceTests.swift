@@ -14,20 +14,45 @@ final class DisplayPreferenceTests: XCTestCase {
     }
 
     func testScaleBecomesACustomProperty() {
-        XCTAssertEqual(RenderShell.Display(fontScale: 1.3).css,
-                       ":root{--agentia-scale:1.3000}")
+        XCTAssertTrue(RenderShell.Display(fontScale: 1.3).css
+            .hasPrefix(":root{--agentia-scale:1.3000}"))
+    }
+
+    /// Paper is a fixed size, so scaling type there does not aid reading — it
+    /// only lengthens the document. Found by dogfooding: the torture fixture
+    /// went from 3 pages to 8 at 2x with identical content.
+    ///
+    /// The reset must travel with the scale rather than sit in base.css: this
+    /// block is written into a later `<style>` at the same specificity, so a
+    /// reset there loses. That is exactly how the first fix failed.
+    func testPrintResetsTheScaleAndShipsWithIt() {
+        let css = RenderShell.Display(fontScale: 2.0).css
+        XCTAssertTrue(css.contains("@media print{:root{--agentia-scale:1}}"), css)
+
+        let scaleAt = try! XCTUnwrap(css.range(of: "--agentia-scale:2.0000"))
+        let printAt = try! XCTUnwrap(css.range(of: "@media print"))
+        XCTAssertLessThan(scaleAt.lowerBound, printAt.lowerBound,
+                          "the reset must come after the value it overrides")
+    }
+
+    /// Nothing is emitted at all when unmodified, so an untouched render is
+    /// byte-identical to one from before the feature existed.
+    func testNoPrintResetWhenThereIsNoScale() {
+        XCTAssertFalse(RenderShell.Display(fontScale: 1.0).css.contains("@media print"))
     }
 
     /// Below ~0.7 the measure collapses to a few words a line; above ~2 a wide
     /// table cannot fit the page at any width. Clamped in the type so no caller
     /// can render an unusable page.
     func testScaleIsClamped() {
-        XCTAssertEqual(RenderShell.Display(fontScale: 12).css,
-                       ":root{--agentia-scale:2.0000}")
-        XCTAssertEqual(RenderShell.Display(fontScale: 0.01).css,
-                       ":root{--agentia-scale:0.7000}")
-        XCTAssertEqual(RenderShell.Display(fontScale: -5).css,
-                       ":root{--agentia-scale:0.7000}")
+        // Asserts the clamped value, not the whole string: the declaration also
+        // carries the print reset, and this test is about the bounds.
+        XCTAssertTrue(RenderShell.Display(fontScale: 12).css
+            .hasPrefix(":root{--agentia-scale:2.0000}"))
+        XCTAssertTrue(RenderShell.Display(fontScale: 0.01).css
+            .hasPrefix(":root{--agentia-scale:0.7000}"))
+        XCTAssertTrue(RenderShell.Display(fontScale: -5).css
+            .hasPrefix(":root{--agentia-scale:0.7000}"))
     }
 
     /// A scale formatted in scientific notation would not parse as CSS, and the

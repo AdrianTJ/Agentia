@@ -21,6 +21,6 @@ html[data-appearance="dark"] {
 .doc h2 { font-size: 1.14em; margin: 1.35em 0 .35em; }
 .doc p, .doc ul, .doc ol { margin-bottom: .72em; }
 .doc li { margin-bottom: .18em; }
-.doc pre { padding: 9px 11px; margin: .85em 0; font-size: 12px; }
+.doc pre { padding: 9px 11px; margin: .85em 0; font-size: 0.828em; }  /* was 12px */
 .doc table { margin: .9em 0; font-size: .82em; }
 .doc td, .doc th { padding: 5px 8px; }
