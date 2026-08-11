@@ -32,10 +32,13 @@ public enum MarkdownRenderer {
         /// Blank YAML/TOML front matter, preserving line numbers so the diff
         /// view stays aligned.
         public static let stripFrontMatter = Options(rawValue: 1 << 6)
+        /// Colour fenced code blocks whose language is recognised. Native, and
+        /// applied here rather than in the page — see `SyntaxHighlighter`.
+        public static let syntaxHighlighting = Options(rawValue: 1 << 7)
 
         public static let `default`: Options = [
             .sourcePositions, .rawHTML, .footnotes,
-            .neutraliseStructuralTags, .stripFrontMatter,
+            .neutraliseStructuralTags, .stripFrontMatter, .syntaxHighlighting,
         ]
     }
 
@@ -205,7 +208,20 @@ public enum MarkdownRenderer {
             StructuralTags.neutralise(&html)
         }
 
-        return String(decoding: html, as: UTF8.self)
+        let text = String(decoding: html, as: UTF8.self)
+        guard options.contains(.syntaxHighlighting) else { return text }
+
+        // Last, so it sees the final escaping. Code content is already escaped
+        // by cmark and stays escaped either side of this, so neutralisation
+        // above cannot have anything to do with what is inside a code block.
+        //
+        // Highlighting only grows the output — each token gains a `<span>` — so
+        // the ceiling checked above no longer holds for it. `apply` keeps a
+        // single page bounded, and if the whole thing still lands over the
+        // ceiling the document is served un-highlighted (which already passed
+        // the check) rather than refused: plain code beats no document.
+        let highlighted = CodeHighlighting.apply(to: text, maxOutputBytes: maximumOutputBytes)
+        return highlighted.utf8.count <= maximumOutputBytes ? highlighted : text
     }
 
     /// Deepest block nesting in the document.

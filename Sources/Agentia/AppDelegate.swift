@@ -23,6 +23,14 @@ enum Launch {
     }
 
     /// Reports milliseconds from process start, once, on first paint.
+    ///
+    /// This fires from the page's `ready` message, which the page only sends
+    /// once its inline script runs. WebKit throttles the script of a fully
+    /// occluded window, so a document opened straight into the background (for
+    /// example `open -g`) may not report until the window is first shown — at
+    /// which point WebKit un-throttles and everything runs. So a missing
+    /// signpost after a background launch is expected, not a regression, and
+    /// the measurement is only meaningful for a foreground open anyway.
     static func reportFirstPaint() {
         guard !didLogFirstPaint else { return }
         didLogFirstPaint = true
@@ -48,6 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// immediately after assignment, leaving the app with no delegate and no
     /// explanation. Debug builds usually mask it, which is the worst case.
     private static var retainedDelegate: AppDelegate?
+
+    /// NSMenu holds its delegate weakly, so without this the Open With submenu
+    /// would populate itself exactly once and then silently stop.
+    private var openWithMenuDelegate: OpenWithMenu?
 
     static func main() {
         Launch.processStart = Date()
@@ -165,6 +177,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(withTitle: "Open…",
                          action: #selector(DocumentWindowController.openDocument(_:)),
                          keyEquivalent: "o")
+        // Targets nil so it travels the responder chain to the key window,
+        // which is what makes ⌘W close the front window rather than a
+        // particular one. The app survives it — see
+        // applicationShouldTerminateAfterLastWindowClosed.
+        fileMenu.addItem(withTitle: "Close",
+                         action: #selector(NSWindow.performClose(_:)),
+                         keyEquivalent: "w")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Export as PDF…",
                          action: #selector(DocumentWindowController.exportPDF(_:)),
@@ -172,6 +191,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(withTitle: "Reveal in Finder",
                          action: #selector(DocumentWindowController.revealInFinder(_:)),
                          keyEquivalent: "r")
+        fileMenu.addItem(.separator())
+
+        // Populated when the submenu opens: the handler list depends on the
+        // document, and asking Launch Services is not free.
+        let openWith = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        let openWithMenu = NSMenu(title: "Open With")
+        let openWithDelegate = OpenWithMenu(controller: windowController)
+        openWithMenu.delegate = openWithDelegate
+        openWithMenuDelegate = openWithDelegate
+        openWith.submenu = openWithMenu
+        fileMenu.addItem(openWith)
+
+        fileMenu.addItem(withTitle: "Share…",
+                         action: #selector(DocumentWindowController.shareDocument(_:)),
+                         keyEquivalent: "")
         fileItem.submenu = fileMenu
         mainMenu.addItem(fileItem)
 

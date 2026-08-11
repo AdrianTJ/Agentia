@@ -45,6 +45,18 @@ function renderMarkdown(path) {
   return execFileSync(CLI, [path], { encoding: "utf8", maxBuffer: 64 << 20 });
 }
 
+/* The raw page an HTML artifact is actually served as. Produced by the same
+   Swift code the app links, so the CSP injection logic under test here is the
+   real one and not a JS mirror of it. */
+function renderArtifact(path) {
+  if (!existsSync(CLI)) {
+    throw new Error(`render CLI missing at ${CLI} — run \`swift build\` first`);
+  }
+  return execFileSync(CLI, ["--artifact", path], {
+    encoding: "utf8", maxBuffer: 64 << 20,
+  });
+}
+
 /* ------------------------------------------------------------------ */
 
 async function main() {
@@ -194,6 +206,32 @@ async function testShellBehaviour(browser, fragment) {
   ok(state.wrapperKeepsSourcePos,
      "table wrapper carries data-sourcepos so diff still finds it");
 
+  /* Syntax highlighting arrives as markup from SyntaxHighlighter, not from a
+     script — the markdown profile pins script-src to shell.js's hash, so a
+     highlighter running in the page could not execute. These checks confirm
+     the spans are present AND actually painted: a token class that resolves to
+     the body colour is highlighting that silently did nothing. */
+  const tokens = await page.evaluate(() => {
+    const doc = document.getElementById("agentia-doc");
+    const spans = [...doc.querySelectorAll("pre code [class^='tok-']")];
+    const body = getComputedStyle(document.body).color;
+    return {
+      count: spans.length,
+      classes: [...new Set(spans.map((s) => s.className))].sort(),
+      distinctColours: new Set(spans.map((s) => getComputedStyle(s).color)).size,
+      allDefaultColoured: spans.every((s) => getComputedStyle(s).color === body),
+      // Highlighting must not have changed the code itself.
+      text: doc.querySelector("pre code").textContent,
+    };
+  });
+
+  ok(tokens.count > 0, "fenced code with a language gets syntax spans");
+  ok(tokens.distinctColours > 1,
+     "tokens are painted in more than one colour", `${tokens.distinctColours}`);
+  ok(!tokens.allDefaultColoured, "token classes resolve to real colours");
+  ok(!/&(amp|lt|gt|quot);/.test(tokens.text),
+     "code text is not double-escaped by highlighting", tokens.text.slice(0, 60));
+
   await page.close();
 }
 
@@ -230,6 +268,7 @@ async function testDiffDecoration(browser) {
           { start: 5, end: 7, kind: "added" },
           { start: 9, end: 9, kind: "modified" },
         ],
+        diffSince: "14:22:07",
       },
     }),
     { waitUntil: "load" }
@@ -260,6 +299,44 @@ async function testDiffDecoration(browser) {
   ok(byText("Modified para")?.modified === true, "modified paragraph is marked modified");
   ok(byText("Modified para")?.added === false,
      "modified paragraph is not also marked added");
+
+  /* The banner. Decorations alone are ambiguous — a reader who did not turn
+     diff mode on has no way to tell a tint from a theme flourish. */
+  const banner = await page.evaluate(() => {
+    const el = document.querySelector(".agentia-diff-banner");
+    const doc = document.getElementById("agentia-doc");
+    return el ? {
+      text: el.textContent.trim(),
+      insideDoc: doc.contains(el),
+      isFirst: doc.firstElementChild === el,
+      alignedWithText: (() => {
+        const h = doc.querySelector("h1");
+        return h ? Math.abs(el.getBoundingClientRect().left
+                            - h.getBoundingClientRect().left) < 2 : false;
+      })(),
+      printed: getComputedStyle(el).display,
+    } : null;
+  });
+
+  ok(banner !== null, "diff mode explains itself with a banner");
+  ok(banner?.text === "3 blocks changed since 14:22:07",
+     "banner counts decorated blocks and names the baseline", banner?.text);
+  ok(banner?.insideDoc === true,
+     "banner lives inside .doc so it inherits the theme's measure and padding");
+  ok(banner?.isFirst === true, "banner is the first thing in the document");
+  ok(banner?.alignedWithText === true,
+     "banner lines up with the body text rather than floating off-measure");
+
+  // No ranges means no banner — an unchanged document must stay quiet.
+  const quiet = await browser.newPage();
+  await quiet.setContent(
+    buildPage({ content: fragment, themeId: "manuscript", title: "No diff" }),
+    { waitUntil: "load" }
+  );
+  await quiet.waitForTimeout(150);
+  ok(await quiet.evaluate(() => !document.querySelector(".agentia-diff-banner")),
+     "no banner when there is nothing to report");
+  await quiet.close();
 
   await page.close();
 }
@@ -564,22 +641,12 @@ async function testDarkAppearance(browser, fragment) {
 /* ---------- 7. html artifact profile ---------- */
 
 async function testHTMLArtifactProfile(browser) {
-  console.log("html artifact profile");
+  console.log("html artifact profile (raw document)");
   const page = await browser.newPage();
 
-  const artifact = `
-    <h1>Dashboard</h1>
-    <script>window.__artifactScriptRan = true;</script>
-    <img src="https://remote.test/pixel.png" alt="remote beacon">
-    <a href="javascript:window.__artifactJSURLRan=true">a javascript: link</a>
-  `;
-
-  const html = buildPage({
-    content: artifact,
-    themeId: "report",
-    title: "Artifact",
-    profile: Profile.htmlArtifact,
-  });
+  // The real thing: a complete document with its own ground, measure and code
+  // colours, served through the Swift raw-artifact path.
+  const html = renderArtifact(join(HERE, "fixtures", "artifact.html"));
 
   const responses = [];
   page.on("response", (r) => responses.push(r.url()));
@@ -592,28 +659,55 @@ async function testHTMLArtifactProfile(browser) {
   const ran = await page.evaluate(() => typeof window.__artifactScriptRan !== "undefined");
   ok(ran, "html artifact profile DOES run the document's own script");
 
-  // This profile allows unsafe-inline, so the page's own CSP cannot be what
-  // stops a javascript: URL. The only remaining guard is shell.js's
-  // interceptLinks preventDefault — clicking proves it, not just reads it.
-  const jsLink = page.locator('#agentia-doc a[href^="javascript:"]');
-  ok(await jsLink.count() >= 1, "artifact fixture contains a javascript: link");
-  await jsLink.first().click();
-  await page.waitForTimeout(150);
-  const afterClick = await page.evaluate(() => ({
-    ran: typeof window.__artifactJSURLRan !== "undefined",
-    stillHere: !!document.getElementById("agentia-doc"),
-  }));
-  ok(!afterClick.ran, "artifact: clicking a javascript: link does not execute it");
-  ok(afterClick.stillHere, "artifact: clicking a javascript: link does not navigate away");
+  /* --- the point of the raw path: the document renders as authored --- */
+
+  const authored = await page.evaluate(() => {
+    const body = getComputedStyle(document.body);
+    const pre = document.getElementById("code");
+    const wrap = document.querySelector(".wrap");
+    return {
+      background: body.backgroundColor,
+      preColour: pre ? getComputedStyle(pre).color : "",
+      preBackground: pre ? getComputedStyle(pre).backgroundColor : "",
+      wrapWidth: wrap ? wrap.getBoundingClientRect().width : 0,
+      gridColumns: getComputedStyle(document.querySelector(".grid"))
+        .gridTemplateColumns.split(" ").length,
+      shellContainer: !!document.getElementById("agentia-doc"),
+      docClass: !!document.querySelector(".doc"),
+      copyButtons: document.querySelectorAll(".agentia-copy").length,
+      bootstrap: !!document.getElementById("agentia-bootstrap"),
+    };
+  });
+
+  ok(authored.background === "rgb(11, 15, 20)",
+     "artifact keeps its own dark ground", authored.background);
+  ok(authored.preColour === "rgb(126, 231, 135)",
+     "artifact's own code colours survive (.doc pre used to override them)",
+     authored.preColour);
+  ok(authored.preBackground === "rgb(17, 24, 35)",
+     "artifact's own pre background survives", authored.preBackground);
+  ok(authored.gridColumns === 4,
+     "a four-column grid stays four columns", `${authored.gridColumns}`);
+  ok(authored.wrapWidth > 700,
+     "layout is not clamped to the shell's 68ch reading measure",
+     `${Math.round(authored.wrapWidth)}px`);
+
+  ok(!authored.shellContainer, "no #agentia-doc wrapper is added");
+  ok(!authored.docClass, "no .doc typography wrapper is added");
+  ok(authored.copyButtons === 0, "no Copy buttons are injected into the artifact");
+  ok(!authored.bootstrap, "no bootstrap block is added");
+
+  /* --- containment is unchanged --- */
 
   const csp = await page.evaluate(() => {
     const m = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
     return m ? m.getAttribute("content") : "";
   });
   ok(csp.includes("connect-src 'none'"),
-     "html artifact profile still forbids network connections");
+     "raw artifact still forbids network connections");
   ok(csp.includes("img-src artifact: data: blob:"),
-     "html artifact profile restricts images to local sources");
+     "raw artifact restricts images to local sources");
+  ok(csp.includes("default-src 'none'"), "raw artifact keeps default-src none");
 
   const loaded = responses.filter((u) => u.startsWith("https://remote.test"));
   ok(loaded.length === 0, "no response was received from a remote origin", loaded.join(", "));
@@ -624,6 +718,43 @@ async function testHTMLArtifactProfile(browser) {
   ok(!imgLoaded, "remote image did not load");
   ok(blocked.some((u) => u.startsWith("https://remote.test")),
      "remote image request was actively blocked", blocked.join(", "));
+
+  /* --- printing, which no longer has any theme print CSS behind it --- */
+
+  // Artifacts skip the shell, so none of themes/*/print.css applies. That is
+  // correct — the artifact's own @media print rules should win — but it means
+  // nothing of ours stops a wide dashboard running off the sheet, so measure
+  // rather than assume.
+  const pdfPath = join(OUT, "artifact.pdf");
+  await page.pdf({ path: pdfPath, format: "A4", printBackground: true });
+  const pdfText = await extractPDFText(pdfPath);
+  const squashed = pdfText.replace(/\s+/g, "");
+
+  ok(squashed.includes("OpsDashboard"), "artifact PDF retains its heading");
+  ok(squashed.includes("region:us-east-1"),
+     "artifact PDF retains code-block content that sits below the fold");
+  ok(squashed.includes("recall0.849"), "artifact PDF retains grid tile content");
+
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  ok(overflow <= 1, "artifact does not overflow horizontally", `${overflow}px`);
+
+  // NOTE on javascript: links. The shelled path used to cancel them in
+  // shell.js's interceptLinks, and this suite clicked one to prove it. The raw
+  // path runs no shell script, so that page-level guard is gone on purpose:
+  //
+  //   * it was never a privilege boundary — this profile already permits
+  //     'unsafe-inline', so the document's own <script> can do anything a
+  //     javascript: URL could;
+  //   * navigation is contained host-side by HardenedWebView's navigation
+  //     delegate, which permits only artifact://doc and cannot be removed by
+  //     the page, unlike a listener it could overwrite.
+  //
+  // That guard is a host-process decision, so a Chromium suite has nothing to
+  // drive. It is covered by AgentiaCore's NavigationPolicyTests, which is why
+  // the decision was moved out of HardenedWebView and into AgentiaCore — when
+  // this note first claimed the delegate covered it, review pointed out there
+  // was no test of the delegate anywhere, and the claim was empty.
 
   await page.close();
 }

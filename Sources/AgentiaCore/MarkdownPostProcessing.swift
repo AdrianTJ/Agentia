@@ -185,6 +185,114 @@ enum FootnoteBackref {
     }
 }
 
+// MARK: - Code highlighting
+
+/// Colours the inside of `<pre><code class="language-…">` blocks.
+///
+/// Done on cmark's output rather than on its AST so that `data-sourcepos`
+/// survives: it lives on the `<pre>`, the diff view depends on it, and
+/// rewriting the node would drop it.
+///
+/// Only the text between `<code …>` and `</code>` is touched, and it is
+/// unescaped, highlighted, and re-escaped as one step — so every character
+/// still passes through exactly one escaping. Double-escaping would surface as
+/// `&amp;lt;` on screen; skipping one would be an injection into a document the
+/// CSP is holding at arm's length.
+enum CodeHighlighting {
+
+    private static let opener = "<code class=\"language-"
+
+    static func apply(to html: String, maxOutputBytes: Int = .max) -> String {
+        guard html.contains(opener) else { return html }
+
+        var out = ""
+        out.reserveCapacity(html.count + 512)
+
+        // Everything before `cursor` is already in `out`. `searchFrom` advances
+        // independently so a rejected candidate can be skipped without emitting
+        // or dropping anything — the skipped bytes stay in the verbatim
+        // passthrough.
+        var cursor = html.startIndex
+        var searchFrom = html.startIndex
+        // Bytes committed to `out` so far, so a document that would highlight
+        // past the ceiling stops expanding and copies the rest verbatim rather
+        // than building a page the size of a phone book in memory first.
+        var emitted = 0
+
+        while let start = html.range(of: opener, range: searchFrom..<html.endIndex) {
+            guard let quote = html[start.upperBound...].firstIndex(of: "\""),
+                  let tagEnd = html[quote...].firstIndex(of: ">")
+            else { break } // not a well-formed opener; leave the rest verbatim
+
+            let bodyStart = html.index(after: tagEnd)
+
+            // A genuine cmark code block escapes every `<` in its body to
+            // `&lt;`, so the next raw `<` after the opener must begin the
+            // block's own `</code>`. If it does not — a raw-HTML `<code>` the
+            // author wrote, a nested `<code>`, an unterminated opener — this is
+            // not a block this pass owns. Skipping it rather than grabbing a
+            // distant `</code>` is what keeps the output well-formed: a flat
+            // search used to weld an opener here to the closing tag of an
+            // unrelated code block later in the document.
+            guard let nextLt = html[bodyStart...].firstIndex(of: "<"),
+                  html[nextLt...].hasPrefix("</code>")
+            else {
+                searchFrom = bodyStart
+                continue
+            }
+
+            let language = String(html[start.upperBound..<quote])
+            let body = String(html[bodyStart..<nextLt])
+
+            let prefix = html[cursor..<bodyStart]
+            out += prefix
+            emitted += prefix.utf8.count
+
+            // Give the highlighter only the budget left, so the whole page —
+            // not just one block — is bounded. A block that would overrun is
+            // served as plain (still-escaped) text.
+            let remaining = maxOutputBytes == .max ? .max : max(0, maxOutputBytes - emitted)
+            let rendered = SyntaxHighlighter.highlight(
+                unescape(body), language: language, maxOutputBytes: remaining) ?? body
+            out += rendered
+            emitted += rendered.utf8.count + "</code>".utf8.count
+            out += "</code>"
+
+            cursor = html.index(nextLt, offsetBy: "</code>".count)
+            searchFrom = cursor
+        }
+
+        out += html[cursor...]
+        return out
+    }
+
+    /// Reverses exactly what cmark escapes in a code block, left to right so
+    /// `&amp;lt;` comes back as the literal `&lt;` rather than as `<`.
+    static func unescape(_ text: String) -> String {
+        var out = ""
+        out.reserveCapacity(text.count)
+
+        var i = text.startIndex
+        while i < text.endIndex {
+            guard text[i] == "&" else {
+                out.append(text[i])
+                i = text.index(after: i)
+                continue
+            }
+            let entities = [("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+                            ("&quot;", "\""), ("&#39;", "'")]
+            if let match = entities.first(where: { text[i...].hasPrefix($0.0) }) {
+                out += match.1
+                i = text.index(i, offsetBy: match.0.count)
+            } else {
+                out.append(text[i])
+                i = text.index(after: i)
+            }
+        }
+        return out
+    }
+}
+
 // MARK: - Structural tag neutralisation
 
 /// Escapes tags that are meaningless inside a fragment and dangerous when the

@@ -99,7 +99,21 @@ enum PDFExporter {
                 completion(.failure(Failure.cancelled))
                 return
             }
-            write(from: webView, settings: settings, to: url, completion: completion)
+            // Collapsed <details> print as just their summary, so any log or
+            // stack trace an author folded away is silently missing from the
+            // export. shell.js opens them on beforeprint for Markdown, but an
+            // HTML artifact runs no shell script — so this is done host-side,
+            // where it holds for both.
+            //
+            // It has to set the `open` attribute: the UA hides the slot rather
+            // than the children, so no amount of print CSS can reveal a closed
+            // <details>.
+            expandDetails(in: webView) {
+                write(from: webView, settings: settings, to: url) { result in
+                    restoreDetails(in: webView)
+                    completion(result)
+                }
+            }
         }
 
         if let window {
@@ -107,6 +121,40 @@ enum PDFExporter {
         } else {
             handle(panel.runModal())
         }
+    }
+
+    /// Marker left on the elements this opened, so only those are closed again.
+    /// A `<details open>` the author wrote must stay open afterwards.
+    private static let reopenedMarker = "data-agentia-print-opened"
+
+    private static func expandDetails(in webView: WKWebView, then body: @escaping () -> Void) {
+        let script = """
+        (function () {
+          var closed = document.querySelectorAll('details:not([open])');
+          for (var i = 0; i < closed.length; i++) {
+            closed[i].setAttribute('\(reopenedMarker)', '');
+            closed[i].open = true;
+          }
+          return closed.length;
+        })();
+        """
+        // A failure here must not block the export — a document with no
+        // <details> is the common case, and a broken script is no reason to
+        // refuse to produce a PDF.
+        webView.evaluateJavaScript(script) { _, _ in body() }
+    }
+
+    private static func restoreDetails(in webView: WKWebView) {
+        let script = """
+        (function () {
+          var opened = document.querySelectorAll('[\(reopenedMarker)]');
+          for (var i = 0; i < opened.length; i++) {
+            opened[i].open = false;
+            opened[i].removeAttribute('\(reopenedMarker)');
+          }
+        })();
+        """
+        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
     /// Write a PDF without any UI. Used by the save panel path and by tests.

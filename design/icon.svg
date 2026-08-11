@@ -1,0 +1,66 @@
+<!--
+  Agentia's app icon.
+
+  It draws the thing the app is for rather than an abstract mark: a page, with
+  one block marked by the same left rule the diff view uses. The palette is the
+  app's own — the manuscript theme's teal (#2f6272) as the ground, paper white,
+  ink grey, and a single warm accent (--diff-mod) on the changed block.
+
+  One accent colour on purpose. At 16pt in the Dock everything but the silhouette
+  and the one warm mark is lost, and that mark is what distinguishes it from every
+  other document icon.
+
+  Rendered by design/make-icon.sh into Sources/Agentia/Agentia.icns.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#3d7387"/>
+      <stop offset="1" stop-color="#23495a"/>
+    </linearGradient>
+
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f2f0ec"/>
+    </linearGradient>
+
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#0d2530" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+
+  <!-- The macOS rounded-rect ground, inset the standard ~100/1024. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#ground)"/>
+
+  <!-- A soft highlight across the top, so the ground is not flat. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="none"
+        stroke="#ffffff" stroke-opacity="0.14" stroke-width="3"/>
+
+  <!--
+    The page fills most of the ground, and the lines are few and thick. An
+    earlier version used eight thin lines on a smaller page: fine at 512, mush
+    at the 32pt the Dock actually draws. Legibility at the small size decides
+    the composition.
+  -->
+  <g filter="url(#lift)">
+    <rect x="262" y="202" width="500" height="620" rx="26" ry="26" fill="url(#paper)"/>
+  </g>
+
+  <!-- Title: shorter and darker, the way a heading reads. -->
+  <rect x="314" y="278" width="240" height="34" rx="17" fill="#2b3038"/>
+
+  <!-- Body. -->
+  <rect x="314" y="358" width="396" height="22" rx="11" fill="#c9ced5"/>
+  <rect x="314" y="400" width="344" height="22" rx="11" fill="#c9ced5"/>
+
+  <!-- The changed block: the tint and left rule the diff view draws. -->
+  <rect x="286" y="458" width="424" height="138" rx="12" fill="#a8681f" fill-opacity="0.11"/>
+  <rect x="286" y="458" width="10" height="138" rx="5" fill="#a8681f"/>
+  <rect x="326" y="486" width="356" height="22" rx="11" fill="#bd8b46"/>
+  <rect x="326" y="530" width="286" height="22" rx="11" fill="#bd8b46"/>
+
+  <!-- Body resumes. -->
+  <rect x="314" y="638" width="396" height="22" rx="11" fill="#c9ced5"/>
+  <rect x="314" y="680" width="310" height="22" rx="11" fill="#c9ced5"/>
+  <rect x="314" y="722" width="372" height="22" rx="11" fill="#c9ced5"/>
+</svg>

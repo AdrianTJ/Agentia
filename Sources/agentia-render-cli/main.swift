@@ -4,6 +4,10 @@
 // rather than a JavaScript reimplementation that could drift.
 //
 //   agentia-render-cli [--no-sourcepos] [--safe] [--smart] [file.md]
+//   agentia-render-cli --artifact [file.html]
+//
+// --artifact emits the raw-document page an HTML artifact is served as, so the
+// browser suite exercises the real injection logic rather than a mirror of it.
 //
 // Replaces tools/cli/agentia_render_cli.c, and keeps its exact contract —
 // including exit codes — so the harness did not have to change shape when the
@@ -14,9 +18,12 @@ import AgentiaCore
 
 var options = MarkdownRenderer.Options.default
 var path: String?
+var asArtifact = false
 
 for argument in CommandLine.arguments.dropFirst() {
     switch argument {
+    case "--artifact":
+        asArtifact = true
     case "--no-sourcepos":
         options.remove(.sourcePositions)
     case "--safe":
@@ -41,6 +48,15 @@ if let path {
     source = contents
 } else {
     source = FileHandle.standardInput.readDataToEndOfFile()
+}
+
+if asArtifact {
+    let page = RawArtifact.page(
+        html: String(decoding: source, as: UTF8.self),
+        csp: RenderShell.contentSecurityPolicy(profile: .htmlArtifact, scriptHash: "")
+    )
+    FileHandle.standardOutput.write(Data(page.utf8))
+    exit(0)
 }
 
 do {

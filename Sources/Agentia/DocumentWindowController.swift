@@ -24,6 +24,8 @@ final class DocumentWindowController: NSWindowController {
     /// The contents as of the previous write, kept in memory so "what changed"
     /// costs nothing extra — the watcher is already running.
     private var previousSource: String?
+    /// Formatted time the baseline was captured, for the diff banner.
+    private var baselineTakenAt: String?
     private var watcher: FileWatcher?
 
     private var mode: ViewMode = .rendered
@@ -33,7 +35,14 @@ final class DocumentWindowController: NSWindowController {
     /// Every document opened this session, newest first — the sidebar list.
     private(set) var openDocuments: [URL] = []
 
-    private var sidebarView: NSView?
+    private var sidebarView: SidebarView?
+    /// Collapsed to zero rather than hidden, so showing it is one animation.
+    private var sidebarWidth: NSLayoutConstraint?
+    private var findBar: FindBar?
+    private var findBarHeight: NSLayoutConstraint?
+    /// Bumped on every search so a stale async result cannot overwrite the
+    /// status of a newer one.
+    private var findGeneration = 0
     private var toolbarController: DocumentToolbar?
 
     init(webView: HardenedWebView) {
@@ -83,8 +92,16 @@ final class DocumentWindowController: NSWindowController {
         // again, with the document still loaded in the web view.
         window.isReleasedWhenClosed = false
 
-        webView.autoresizingMask = [.width, .height]
-        window.contentView = webView
+        // A single-window viewer that manages and autosaves its own frame has
+        // no use for macOS state restoration, and leaving it on would let the
+        // system restore a window on relaunch that then fights this app's own
+        // frame autosave and Dock-icon reopen. (Note: there is also a 500×500
+        // off-screen window in the process — that one is a WebKit-internal host
+        // window, not restoration, and is not removed by this. It is invisible
+        // and unlisted, so it is left alone.)
+        window.isRestorable = false
+
+        window.contentView = makeContentView()
 
         let toolbar = DocumentToolbar(target: self)
         window.toolbar = toolbar.makeToolbar()
@@ -98,6 +115,74 @@ final class DocumentWindowController: NSWindowController {
         window.setFrameAutosaveName("AgentiaDocumentWindow")
 
         return window
+    }
+
+    /// The window's content: an optional sidebar beside the document.
+    ///
+    /// Auto Layout with a collapsible width constraint rather than an
+    /// NSSplitView. A split view brings a divider the reader can drag to zero,
+    /// a delegate to keep it from doing so, and autosaved positions that then
+    /// disagree with the toolbar button's idea of whether the sidebar is
+    /// showing. One constraint has none of that.
+    private func makeContentView() -> NSView {
+        let container = NSView()
+
+        let sidebar = SidebarView(controller: self)
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebarView = sidebar
+
+        let find = FindBar(
+            onSearch: { [weak self] query, forward in
+                self?.runFind(query, forward: forward)
+            },
+            onDismiss: { [weak self] in self?.hideFindBar() }
+        )
+        find.translatesAutoresizingMaskIntoConstraints = false
+        findBar = find
+
+        webView.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(sidebar)
+        container.addSubview(find)
+        container.addSubview(webView)
+
+        let findHeight = find.heightAnchor.constraint(equalToConstant: 0)
+        findBarHeight = findHeight
+        // clipsToBounds defaults differ by macOS version (NO on 14+, YES
+        // before), so both collapsible panes pin it rather than rely on the
+        // default. Hidden as well as zero-sized, so nothing inside them is in
+        // the key-view loop while collapsed — a Tab must not reach a control in
+        // a pane the reader cannot see.
+        find.clipsToBounds = true
+        find.isHidden = true
+        sidebar.clipsToBounds = true
+        sidebar.isHidden = true
+
+        NSLayoutConstraint.activate([
+            find.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            find.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            find.topAnchor.constraint(equalTo: container.topAnchor),
+            findHeight,
+        ])
+
+        // Hidden at launch: zero width, and clipped so its contents cannot
+        // paint outside it while collapsed.
+        let width = sidebar.widthAnchor.constraint(equalToConstant: 0)
+        sidebarWidth = width
+
+        NSLayoutConstraint.activate([
+            sidebar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: container.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            width,
+
+            webView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: find.bottomAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        return container
     }
 
     func showEmptyState() {
@@ -124,14 +209,21 @@ final class DocumentWindowController: NSWindowController {
             // against an unrelated file is noise.
             if self.snapshot?.url != url {
                 previousSource = nil
+                baselineTakenAt = nil
                 lastScrollFraction = 0
                 mode = .rendered
             }
 
             self.snapshot = snapshot
-            if !openDocuments.contains(url) {
+            // Canonicalised before the membership test: the same file reached
+            // by a symlink, an alias, or a case-differing path on a
+            // case-insensitive volume is one document, not two, and must not
+            // produce two rows.
+            if !openDocuments.contains(where: { sameFile($0, url) }) {
                 openDocuments.insert(url, at: 0)
             }
+            // Only costs anything once the reader has opened the sidebar.
+            if isSidebarShowing { refreshSidebar() }
 
             startWatching(url)
             render()
@@ -140,8 +232,21 @@ final class DocumentWindowController: NSWindowController {
             window?.representedURL = url
 
         } catch {
+            // The sidebar may already have moved its selection to the row the
+            // reader clicked — a file since deleted or renamed. Drop it and put
+            // the highlight back on the document actually showing, so the list
+            // never points at something that is not on screen.
+            openDocuments.removeAll { sameFile($0, url) }
+            if isSidebarShowing { refreshSidebar() }
             presentError(error, whileOpening: url)
         }
+    }
+
+    private var isSidebarShowing: Bool { (sidebarWidth?.constant ?? 0) > 0 }
+
+    private func sameFile(_ a: URL, _ b: URL) -> Bool {
+        a.resolvingSymlinksInPath().standardizedFileURL
+            == b.resolvingSymlinksInPath().standardizedFileURL
     }
 
     @objc func openDocument(_ sender: Any?) {
@@ -172,9 +277,20 @@ final class DocumentWindowController: NSWindowController {
         guard fresh.source != current.source else { return }
 
         previousSource = current.source
+        baselineTakenAt = Self.clockFormatter.string(from: current.readAt)
         snapshot = fresh
         render()
     }
+
+    /// Wall-clock time only. The baseline is always from this session — the app
+    /// has to be open to have seen the previous write — so a date would be
+    /// noise, and "14:22:07" is what a reader matches against their own memory
+    /// of when the agent last ran.
+    private static let clockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
 
     // MARK: - Rendering
 
@@ -183,7 +299,8 @@ final class DocumentWindowController: NSWindowController {
 
         let bootstrap = RenderShell.Bootstrap(
             diffRanges: diffRangesForCurrentMode(),
-            scrollFraction: lastScrollFraction
+            scrollFraction: lastScrollFraction,
+            diffSince: mode == .diff ? baselineTakenAt : nil
         )
 
         let content: String
@@ -198,6 +315,18 @@ final class DocumentWindowController: NSWindowController {
             profile = .markdown
 
         case .rendered, .diff:
+            // An HTML artifact is served as its own document: no shell, no
+            // theme, no injected script. Nothing below applies to it, so this
+            // returns rather than falling through — and it asks AgentiaCore
+            // rather than deciding here, so the app and the core renderer
+            // cannot disagree about which documents are served raw.
+            if let standalone = DocumentRenderer.standalonePage(for: snapshot) {
+                webView.load(page: standalone,
+                             assetRoot: snapshot.assetRoot,
+                             profile: snapshot.kind.renderProfile)
+                return
+            }
+
             switch snapshot.kind {
             case .markdown:
                 // A whitespace-only file is indistinguishable from an empty
@@ -265,22 +394,70 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc func toggleDiff(_ sender: Any?) {
-        guard previousSource != nil else {
-            NSSound.beep() // nothing to compare against yet
-            return
-        }
+        // Unreachable without a baseline: the menu item and toolbar button are
+        // disabled until the file has been rewritten once. It used to beep
+        // instead, which told the reader they had done something wrong rather
+        // than that the feature was not available yet.
+        guard canShowDiff else { return }
         mode = (mode == .diff) ? .rendered : .diff
         render()
     }
 
-    @objc func toggleSidebar(_ sender: Any?) {
-        // Built lazily: hidden by default means it must not cost anything at
-        // launch.
-        if sidebarView == nil {
-            sidebarView = SidebarView(controller: self)
-        }
-        sidebarView?.isHidden.toggle()
+    /// A diff needs something to compare against, which only exists once the
+    /// file has changed on disk while open.
+    var canShowDiff: Bool {
+        previousSource != nil && snapshot?.kind != .html
     }
+
+    @objc func toggleSidebar(_ sender: Any?) {
+        guard let sidebarWidth, let sidebarView else { return }
+        let willShow = sidebarWidth.constant == 0
+
+        if willShow {
+            // Populate only on the way in — a reader who never opens it pays
+            // nothing — and unhide before animating so it fades in with width.
+            refreshSidebar()
+            sidebarView.isHidden = false
+        }
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.15
+            context.allowsImplicitAnimation = true
+            sidebarWidth.animator().constant = willShow ? SidebarView.preferredWidth : 0
+            window?.contentView?.layoutSubtreeIfNeeded()
+        }, completionHandler: { [weak self] in
+            // Hidden once collapsed, not merely zero-width. A zero-width table
+            // stays in the key-view loop, so a Tab could focus it and its
+            // arrow keys would swap the document with no visible sidebar to
+            // explain why.
+            if !willShow { self?.sidebarView?.isHidden = true }
+        })
+    }
+
+    /// Keep the list in step with what has been opened.
+    ///
+    /// Only called when the sidebar is about to be shown or is already showing,
+    /// so a reader who never opens it pays nothing.
+    private func refreshSidebar() {
+        guard let sidebarView, sidebarWidth != nil else { return }
+
+        // The folder the current document lives in, not the session's history.
+        // An agent writes a run — report, summary, dashboard — into one
+        // directory, and moving between those is the navigation this is for;
+        // the history is a list of things already read. Falls back to the
+        // history when nothing is open.
+        let documents: [URL]
+        if let root = snapshot?.assetRoot {
+            let folder = FolderScanner.documents(in: root)
+            documents = folder.isEmpty ? openDocuments : folder
+        } else {
+            documents = openDocuments
+        }
+
+        sidebarView.reload(documents: documents, selected: snapshot?.url)
+    }
+
+    var isSidebarImplemented: Bool { true }
 
     @objc func copyAll(_ sender: Any?) {
         guard let snapshot else { return }
@@ -302,6 +479,27 @@ final class DocumentWindowController: NSWindowController {
         }
     }
 
+    /// The document on disk, for the routes that hand a file to another app.
+    var documentURL: URL? { snapshot?.url }
+
+    /// The system share sheet: Mail, Messages, AirDrop, Notes and every
+    /// installed share extension, without Agentia knowing about any of them.
+    ///
+    /// Shares the file rather than the rendered text, so the recipient gets
+    /// something they can open — and so nothing has to decide which of the
+    /// document's representations to send.
+    @objc func shareDocument(_ sender: Any?) {
+        guard let url = documentURL else { return }
+
+        let picker = NSSharingServicePicker(items: [url])
+        let anchor: NSView? = (sender as? NSView)
+            ?? (sender as? NSToolbarItem)?.view
+            ?? window?.contentView
+
+        guard let anchor else { return }
+        picker.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+    }
+
     @objc func revealInFinder(_ sender: Any?) {
         guard let url = snapshot?.url else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -309,19 +507,60 @@ final class DocumentWindowController: NSWindowController {
 
     /// In-page find. WKWebView's own implementation highlights inside the
     /// rendered page rather than the source, which is what a reader wants.
-    ///
-    /// Not yet wired to a find bar — this is the plumbing, and the UI lands
-    /// with the sidebar in Phase 3.
     @objc func performFind(_ sender: Any?) {
+        guard let findBarHeight, let findBar else { return }
+        findBar.isHidden = false
+        findBarHeight.constant = FindBar.preferredHeight
+        window?.contentView?.layoutSubtreeIfNeeded()
+        findBar.focus()
+    }
+
+    private func hideFindBar() {
+        guard let findBarHeight else { return }
+        findBarHeight.constant = 0
+        findBar?.isHidden = true
+        window?.contentView?.layoutSubtreeIfNeeded()
+        // Clearing the highlight matters: leaving the page speckled with
+        // matches after the bar is gone looks like rendering damage.
+        webView.find("", configuration: WKFindConfiguration()) { _ in }
         window?.makeFirstResponder(webView)
     }
 
-    func find(_ query: String, forward: Bool = true) {
+    private func runFind(_ query: String, forward: Bool) {
+        // Clearing the field must clear the highlight, not just the status.
+        // Otherwise backspacing a matched query to empty leaves the document
+        // speckled with matches until the bar is dismissed — the same "looks
+        // like rendering damage" the dismiss path already guards against.
+        guard !query.isEmpty else {
+            webView.find("", configuration: WKFindConfiguration()) { _ in }
+            findBar?.report(found: true)
+            return
+        }
+
+        // WKWebView.find is async and fired per keystroke, so a slow older
+        // search can resolve after a newer one and paint a stale "Not found"
+        // for a query the reader has already moved past. Only the newest
+        // request is allowed to touch the status line.
+        findGeneration += 1
+        let generation = findGeneration
+        find(query, forward: forward) { [weak self] found in
+            guard let self, generation == self.findGeneration else { return }
+            self.findBar?.report(found: found)
+        }
+    }
+
+    func find(
+        _ query: String,
+        forward: Bool = true,
+        completion: ((Bool) -> Void)? = nil
+    ) {
         let configuration = WKFindConfiguration()
         configuration.backwards = !forward
         configuration.caseSensitive = false
         configuration.wraps = true
-        webView.find(query, configuration: configuration) { _ in }
+        webView.find(query, configuration: configuration) { result in
+            completion?(result.matchFound)
+        }
     }
 
     @objc func allowNetworkForDocument(_ sender: Any?) {
@@ -352,6 +591,43 @@ final class DocumentWindowController: NSWindowController {
     }
 }
 
+// MARK: - Enabling and disabling commands
+
+/// One place decides whether a command is available, and both the menu and the
+/// toolbar ask it. Without this the app offered every command at all times:
+/// Export PDF with no document open, Toggle Diff with nothing to compare
+/// against, and a Documents button wired to a sidebar that does not exist yet.
+extension DocumentWindowController: NSMenuItemValidation, NSToolbarItemValidation {
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        isEnabled(item.action)
+    }
+
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        isEnabled(item.action)
+    }
+
+    private func isEnabled(_ action: Selector?) -> Bool {
+        switch action {
+        case #selector(toggleSidebar(_:)):
+            return isSidebarImplemented
+        case #selector(toggleDiff(_:)):
+            return canShowDiff
+        case #selector(exportPDF(_:)), #selector(copyAll(_:)),
+             #selector(revealInFinder(_:)), #selector(performFind(_:)),
+             #selector(shareDocument(_:)):
+            return snapshot != nil
+        case #selector(toggleSource(_:)):
+            // Source view works for anything, including an HTML artifact — it
+            // is the one way to read an artifact's markup rather than run it.
+            return snapshot != nil
+        default:
+            // Open, Close, Quit and anything else the responder chain handles.
+            return true
+        }
+    }
+}
+
 // MARK: - Page messages
 
 extension DocumentWindowController: HardenedWebViewDelegate {
@@ -369,10 +645,54 @@ extension DocumentWindowController: HardenedWebViewDelegate {
             Clipboard.writePlain(text)
 
         case .openExternal(let url):
-            // An artifact never navigates itself; links go to the browser.
+            // Every producer now routes through NavigationPolicy before emitting
+            // this, so the scheme is already an allowlisted one. Re-checked here
+            // anyway: this is the single call to NSWorkspace.open, and it must
+            // never be reached by a file:// or smb:// URL regardless of how the
+            // message was produced.
             guard let scheme = url.scheme?.lowercased(),
-                  scheme == "http" || scheme == "https" || scheme == "mailto" else { return }
+                  NavigationPolicy.externallyOpenableSchemes.contains(scheme) else { return }
             NSWorkspace.shared.open(url)
+
+        case .confirmOpenExternal(let url):
+            confirmOpenExternal(url)
+        }
+    }
+
+    /// Show the reader where a link goes before leaving the app.
+    ///
+    /// Only artifacts reach here, and only because they can script: WebKit
+    /// classifies `anchor.click()` from a document's own code as a link
+    /// activation, indistinguishable from a real one. Opening it silently would
+    /// let an artifact put document text in a query string and hand it to the
+    /// browser — an exfiltration channel that never touches the web view, so
+    /// neither `connect-src 'none'` nor the content rule list would see it.
+    ///
+    /// The whole URL is shown, not a shortened form: the query string is the
+    /// part worth reading.
+    private func confirmOpenExternal(_ url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Open this link in your browser?"
+        alert.informativeText = """
+        This document asked to open:
+
+        \(url.absoluteString)
+
+        It can run its own code, so this may not have come from your click.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+
+        let open: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .alertFirstButtonReturn else { return }
+            NSWorkspace.shared.open(url)
+        }
+
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: open)
+        } else {
+            open(alert.runModal())
         }
     }
 
