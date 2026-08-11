@@ -228,7 +228,13 @@ extension HardenedWebView: WKNavigationDelegate {
         // document itself. Anything else — a meta refresh, a form post, script
         // setting location — is refused, so an artifact cannot replace itself
         // with something else.
-        if url.scheme == ArtifactSchemeHandler.scheme {
+        //
+        // The host is restricted to "doc" as well as the scheme: script may
+        // navigate to artifact://asset/... to replace the view with a raw local
+        // file, which buys it a page with no CSP at all. There is no legitimate
+        // navigation to an asset.
+        if url.scheme == ArtifactSchemeHandler.scheme,
+           url.host == ArtifactSchemeHandler.documentHost {
             decisionHandler(.allow)
             return
         }

@@ -16,6 +16,7 @@ import AgentiaCore
 final class ArtifactSchemeHandler: NSObject, WKURLSchemeHandler {
 
     static let scheme = "artifact"
+    static let documentHost = "doc"
     static let documentURL = URL(string: "artifact://doc/")!
 
     /// Largest asset served inline. An artifact referencing a huge local file

@@ -15,24 +15,23 @@ let package = Package(
         // Phase 0 launch measurement can be run with `swift run`.
         // tools/make-app.sh wraps it into a double-clickable .app.
         .executable(name: "Agentia", targets: ["Agentia"]),
+        // Drives AgentiaCore's renderer from the command line so the browser
+        // suite tests the same code the app links, not a JS reimplementation.
+        .executable(name: "agentia-render-cli", targets: ["agentia-render-cli"]),
     ],
     dependencies: [
         // Apple's fork of cmark-gfm. Note: its gfm branch has a malformed
-        // footnote backref that CAgentiaMarkdown repairs — see the workaround
-        // comment in agentia_markdown.c.
+        // footnote backref that AgentiaCore repairs — see the workaround
+        // comment on FootnoteBackref in MarkdownPostProcessing.swift.
         .package(url: "https://github.com/swiftlang/swift-cmark.git", branch: "gfm"),
     ],
     targets: [
         .target(
-            name: "CAgentiaMarkdown",
+            name: "AgentiaCore",
             dependencies: [
                 .product(name: "cmark-gfm", package: "swift-cmark"),
                 .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
-            ]
-        ),
-        .target(
-            name: "AgentiaCore",
-            dependencies: ["CAgentiaMarkdown"],
+            ],
             resources: [
                 .copy("Resources/shell"),
                 .copy("Resources/themes"),
@@ -44,6 +43,10 @@ let package = Package(
             // Consumed by tools/make-app.sh when assembling the bundle, not a
             // SwiftPM resource.
             exclude: ["Info.plist"]
+        ),
+        .executableTarget(
+            name: "agentia-render-cli",
+            dependencies: ["AgentiaCore"]
         ),
         .testTarget(
             name: "AgentiaCoreTests",

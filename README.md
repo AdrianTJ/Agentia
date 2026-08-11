@@ -25,18 +25,21 @@ to stay on. Parsing in-process means the web view receives finished HTML and Mar
 render with scripting pinned to a single hash.
 
 ```
-file.md ──► cmark-gfm (C, in-process) ──► HTML ──┐
-                                                  ├──► WKWebView ──► screen
-file.html ───────────────── as-is ───────────────┘        │           └──► PDF
-                                                     network blocked
+file.md ──► cmark-gfm (in-process) ──► HTML ──┐
+                                               ├──► WKWebView ──► screen
+file.html ─────────────── as-is ──────────────┘        │           └──► PDF
+                                                  network blocked
 ```
+
+Agentia's own code is entirely Swift. cmark-gfm is the only C on the path, driven
+directly through its C API — there is no intermediate shim to keep in step.
 
 | Layer | Path | What it does |
 | --- | --- | --- |
-| C shim | `Sources/CAgentiaMarkdown/` | cmark-gfm behind three functions; GFM extensions, footnotes, source positions |
-| Core | `Sources/AgentiaCore/` | Page assembly, themes, diff engine, asset-path validation. Foundation only |
+| Core | `Sources/AgentiaCore/` | cmark-gfm driving, GFM extensions, footnotes, source positions, page assembly, themes, diff engine, asset-path validation |
 | App | `Sources/Agentia/` | AppKit shell, hardened web view, `artifact://` handler, FSEvents watcher, PDF export |
 | Shell | `Sources/AgentiaCore/Resources/` | HTML template, base CSS, pinned script, six themes |
+| CLI | `Sources/agentia-render-cli/` | Drives the renderer from a terminal, so the browser suite tests the code the app ships |
 
 ## Security model
 
@@ -65,20 +68,21 @@ layer.
 
 ## Building and testing
 
-Two of the three layers are testable **without a Mac**, which is how they were developed:
-
 ```bash
-./tools/build-ctest.sh                # C parsing core — 102 checks, clang only
-node tools/webtest/run-tests.mjs      # render shell in real Chromium — 147 checks
+swift build                           # core, app, and the render CLI
+swift test                            # 114 checks, green in debug and release
+node tools/webtest/run-tests.mjs      # render shell in real Chromium — 160 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
+tools/make-app.sh                     # builds .build/Agentia.app
 ```
 
-On macOS:
+The browser suite shells out to `.build/debug/agentia-render-cli`, so `swift build` has to
+run first. It renders through the same code the app links rather than a JavaScript
+reimplementation that could drift.
 
-```bash
-swift test                          # AgentiaCore
-tools/make-app.sh                   # builds .build/Agentia.app
-```
+If `swift test` reports `no such module 'XCTest'`, `xcode-select` is pointing at the Command
+Line Tools, which do not ship it. Point it at Xcode, or prefix the command with
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
 ### What is verified, and what is not
 
@@ -86,23 +90,19 @@ Being honest about this matters more than looking finished.
 
 | Layer | Status |
 | --- | --- |
-| C parsing core | **Tested.** 102 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
-| Render shell, themes, print CSS | **Tested in a real browser.** 147 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
-| Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors |
-| AgentiaCore Swift | **Written, not yet compiled.** Full XCTest suite ships; needs `swift test` on a Mac |
-| macOS app layer | **Written, not yet compiled.** Needs the macOS SDK |
+| Parsing core | **Tested.** 51 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
+| Render shell, themes, print CSS | **Tested in a real browser.** 160 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
+| Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors, plus XCTest |
+| AgentiaCore Swift | **Tested.** 114 XCTest cases, run in both debug and release |
+| macOS app layer | **Compiles and launches.** No automated coverage — it is AppKit and WebKit wiring, verified by use |
 
-The Swift layers were written on Linux with no Swift toolchain available
-(`download.swift.org` is unreachable from the build environment). To keep them honest anyway:
+Two harnesses exist to keep implementations that must agree from drifting:
 
 - `tools/gen-golden.mjs` emits the values `AgentiaCore` and `build-page.mjs` must agree on
   byte for byte. Expectations are **computed by running the JS implementation**, never written
   by hand, so a golden value cannot itself be wrong.
-- `tools/verify-diff-vectors.py` is a transcription of `DiffEngine` that executes here and
-  generates the vectors the Swift tests assert.
-
-Expect first `swift build` on a Mac to surface compile errors. That is the known cost of the
-environment, not a design assumption.
+- `tools/verify-diff-vectors.py` is a transcription of `DiffEngine` that generates the vectors
+  the Swift tests assert.
 
 ## Things the testing actually caught
 
@@ -110,7 +110,7 @@ environment, not a design assumption.
   the footnote backref — `aria-label="Back to reference 1↩</a>` with no closing `">`. An
   unterminated attribute swallows the rest of the document, so a **single footnote corrupts
   the entire page**, including the shell script. Upstream `github/cmark-gfm` is correct; the
-  defect is specific to Apple's fork. `CAgentiaMarkdown` repairs it, with tests pinning both
+  defect is specific to Apple's fork. `FootnoteBackref` repairs it, with tests pinning both
   the repair and the correct multi-backref path it must not touch. It becomes a no-op if the
   dependency is fixed.
 - **Code blocks squeezing instead of scrolling.** Tables inside a scroll container inherited
@@ -128,17 +128,23 @@ document text with one line of script, wide tables losing 18 of 28 columns in th
 
 ## Measured
 
-On an x86 vCPU with cmark-gfm 0.29.0.gfm.13:
+Apple Silicon, release build, cmark-gfm 0.29.0.gfm.13. The C column is the shim this code
+replaced, measured on the same machine against the same corpus before it was deleted:
 
-| Input | Parse |
-| --- | --- |
-| 10 KB | 0.46 ms |
-| 50 KB | 1.8 ms |
-| 200 KB | 7.5 ms |
+| Input | Swift | C (former shim) |
+| --- | --- | --- |
+| 10 KB | 0.39 ms | 0.41 ms |
+| 50 KB | 1.73 ms | 1.69 ms |
+| 200 KB | 6.79 ms | 6.96 ms |
+| 1 MB | 33.9 ms | 36.2 ms |
 
-Source positions roughly double parse cost, which is still negligible at artifact scale, so
-they stay on for the diff view. No quadratic blowup on unclosed-bracket, backtick or
-angle-bracket bombs at 50k characters.
+Source positions cost about 43%, which is negligible at artifact scale, so they stay on for
+the diff view. No quadratic blowup on unclosed-bracket, backtick or angle-bracket bombs at
+50k characters.
+
+A debug build is roughly 30x slower — it compiles cmark-gfm at `-O0` along with everything
+else — so `swift test` reports about 1 s/MB. The throughput test picks its ceiling by
+configuration for that reason; only the release number means anything.
 
 **The number that still does not exist** is cold launch to first paint from a Finder
 double-click on Apple Silicon. No public source establishes it, so `AppDelegate` carries
@@ -187,17 +193,19 @@ Found by dogfooding and not yet fixed. Recorded rather than quietly dropped.
 | Issue | Impact |
 | --- | --- |
 | HTML artifacts are wrapped in the shell's `<main class="doc">` and inherit its typography, so a self-contained dashboard gets clamped to a 68ch measure and re-themed | High for the artifact-viewer use case. Wants a raw-document path that skips `.doc` and the shell's DOM mutations |
-| An empty or whitespace-only file opens as a blank white window | The `.agentia-empty` state exists but is only used for "no document open" |
 | Mermaid fences render as plain code blocks; `$…$` math renders as raw TeX | Deferred deliberately (both need JS, behind a per-document opt-in), but very visible in agent output |
 | Dark mode looks nearly identical across all six themes — only the accent differs | Paper and ink come from `base.css`; whether that is right is a design call |
 | A wide table gives no visual hint that columns continue off-screen | It scrolls, but nothing says so |
 | Technical theme has `##`/`###` heading markers but no `#` on h1 | Terminal theme has all three |
 | Adjacent footnote references render as `34` rather than `3,4` | Reads as "thirty-four" |
 
-Four tests are known to be weak: the `javascript:` URL check never clicks the
-link, `check(1, "free(NULL) is safe")` is a tautology, `pageCount >= 1` cannot
-fail on a valid PDF, and the copy-button count lacks the non-empty guard its
-neighbour has.
+The three formerly-weak tests have been strengthened: the `javascript:` URL
+check now clicks the link in both the hash-pinned and the artifact profiles
+(the artifact profile allows inline script, so only `shell.js`'s
+`preventDefault` stands between the click and execution), the PDF page count
+is asserted to a non-tautological band derived from the fixture's measured
+2–4 pages, and the copy-button check first proves the fixture has code
+blocks so it cannot pass by having nothing to count.
 
 ## Not built yet
 

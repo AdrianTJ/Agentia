@@ -46,6 +46,19 @@ final class DocumentWindowController: NSWindowController {
         shell = try? RenderShell.bundled()
         themes = (try? ThemeStore.bundled().loadAll()) ?? []
         theme = themes.first { $0.id == Preferences.themeID } ?? themes.first
+
+        // Built here rather than in a loadWindow() override, because
+        // NSWindowController.init(window:) marks the window as already loaded —
+        // even when what it was handed is nil. The nib-loading path is then
+        // never entered: loadWindow() is not called, loadWindowIfNeeded() sees
+        // a loaded controller and returns, `window` stays nil forever, and
+        // showWindow(_:) silently does nothing. The app launched, rendered, and
+        // reported first paint with no window on screen — while still taking
+        // over the menu bar as the frontmost app.
+        //
+        // The window has to be assigned after super.init in any case, because
+        // the toolbar delegate needs self.
+        self.window = makeWindow()
     }
 
     @available(*, unavailable)
@@ -53,7 +66,7 @@ final class DocumentWindowController: NSWindowController {
 
     // MARK: - Window
 
-    override func loadWindow() {
+    private func makeWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 980, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -62,7 +75,6 @@ final class DocumentWindowController: NSWindowController {
         )
         window.titlebarAppearsTransparent = false
         window.titleVisibility = .hidden
-        window.setFrameAutosaveName("AgentiaDocumentWindow")
         window.minSize = NSSize(width: 520, height: 380)
 
         webView.autoresizingMask = [.width, .height]
@@ -72,7 +84,14 @@ final class DocumentWindowController: NSWindowController {
         window.toolbar = toolbar.makeToolbar()
         toolbarController = toolbar
 
-        self.window = window
+        // Centre before adopting the autosave name, so the first-ever launch
+        // opens in the middle of the screen rather than in the bottom-left
+        // corner the contentRect above would otherwise put it in. Once a frame
+        // has been saved, setFrameAutosaveName restores it and this is a no-op.
+        window.center()
+        window.setFrameAutosaveName("AgentiaDocumentWindow")
+
+        return window
     }
 
     func showEmptyState() {
@@ -175,7 +194,17 @@ final class DocumentWindowController: NSWindowController {
         case .rendered, .diff:
             switch snapshot.kind {
             case .markdown:
-                content = (try? MarkdownRenderer.renderHTML(snapshot.source)) ?? ""
+                // A whitespace-only file is indistinguishable from an empty
+                // one after parsing, so catch it before rendering and show the
+                // empty state rather than a blank page. A render failure (an
+                // oversized input, a nesting bomb) must say so rather than
+                // silently blanking the window.
+                if snapshot.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    content = emptyState("This document is empty.")
+                } else {
+                    content = (try? MarkdownRenderer.renderHTML(snapshot.source))
+                        ?? emptyState("This document could not be rendered.")
+                }
             case .html:
                 content = snapshot.source
             case .plainText:
@@ -194,6 +223,10 @@ final class DocumentWindowController: NSWindowController {
         ) else { return }
 
         webView.load(page: page, assetRoot: snapshot.assetRoot, profile: profile)
+    }
+
+    private func emptyState(_ message: String) -> String {
+        "<p class=\"agentia-empty\">\(escapeHTML(message))</p>"
     }
 
     private func diffRangesForCurrentMode() -> [DiffRange]? {
