@@ -165,6 +165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(withTitle: "Open…",
                          action: #selector(DocumentWindowController.openDocument(_:)),
                          keyEquivalent: "o")
+        // Targets nil so it travels the responder chain to the key window,
+        // which is what makes ⌘W close the front window rather than a
+        // particular one. The app survives it — see
+        // applicationShouldTerminateAfterLastWindowClosed.
+        fileMenu.addItem(withTitle: "Close",
+                         action: #selector(NSWindow.performClose(_:)),
+                         keyEquivalent: "w")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Export as PDF…",
                          action: #selector(DocumentWindowController.exportPDF(_:)),

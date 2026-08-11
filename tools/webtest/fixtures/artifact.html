@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ops Dashboard</title>
+<style>
+  /* A self-contained artifact brings its own everything. The point of the raw
+     path is that all of this survives: the dark ground, the wide measure, and
+     the code colours the shell's `.doc pre` used to override. */
+  body { background: rgb(11, 15, 20); color: rgb(230, 237, 243);
+         font-family: ui-monospace, SFMono-Regular, monospace; margin: 0; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  pre#code { background: rgb(17, 24, 35); color: rgb(126, 231, 135); padding: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tile { background: rgb(22, 27, 34); padding: 16px; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ops Dashboard</h1>
+  <div class="grid">
+    <div class="tile">p50 214 ms</div>
+    <div class="tile">p99 871 ms</div>
+    <div class="tile">recall 0.849</div>
+    <div class="tile">cost $0.55</div>
+  </div>
+  <pre id="code">status: green
+region: us-east-1</pre>
+  <img src="https://remote.test/pixel.png" alt="remote beacon">
+  <a id="jslink" href="javascript:window.__artifactJSURLRan=true">a javascript: link</a>
+</div>
+<script>window.__artifactScriptRan = true;</script>
+</body>
+</html>

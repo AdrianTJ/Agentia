@@ -43,10 +43,18 @@ public struct RenderShell: Sendable {
     public struct Bootstrap: Codable, Sendable, Equatable {
         public var diffRanges: [DiffRange]?
         public var scrollFraction: Double?
+        /// When the baseline was taken, already formatted for display — the
+        /// page must not be handed a locale or a date to reason about.
+        public var diffSince: String?
 
-        public init(diffRanges: [DiffRange]? = nil, scrollFraction: Double? = nil) {
+        public init(
+            diffRanges: [DiffRange]? = nil,
+            scrollFraction: Double? = nil,
+            diffSince: String? = nil
+        ) {
             self.diffRanges = diffRanges
             self.scrollFraction = scrollFraction
+            self.diffSince = diffSince
         }
 
         public static let empty = Bootstrap()

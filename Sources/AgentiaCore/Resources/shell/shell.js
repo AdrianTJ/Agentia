@@ -61,9 +61,13 @@
 
   /* ---------- diff decoration ---------- */
 
+  /* Returns how many top-level blocks were decorated, which is what the
+     banner reports — the count of ranges would be a different number, and the
+     one the reader cannot see. */
   function applyDiff(ranges) {
-    if (!ranges || !ranges.length) return;
+    if (!ranges || !ranges.length) return 0;
 
+    var decorated = 0;
     var blocks = doc.querySelectorAll("[data-sourcepos]");
     for (var i = 0; i < blocks.length; i++) {
       var el = blocks[i];
@@ -84,9 +88,37 @@
         el.classList.add(range.kind === "added"
           ? "agentia-diff-added"
           : "agentia-diff-modified");
+        decorated++;
         break;
       }
     }
+
+    return decorated;
+  }
+
+  /* Says what the tint means, and when the baseline was taken.
+     The decorations alone are ambiguous — a reader who did not turn diff mode
+     on themselves has no way to tell a highlight from a theme flourish.
+
+     Inserted as the first child of #agentia-doc rather than as a sibling: a
+     sibling has to restate .doc's measure and padding to line up with the
+     text, and themes are free to override those on .doc, so the banner drifted
+     out of alignment with the very document it labels. Inside, it inherits
+     whatever the theme decided.
+
+     It carries no data-sourcepos, so it is invisible to applyDiff. */
+  function showDiffBanner(count, since) {
+    if (!count) return;
+
+    var banner = document.createElement("p");
+    banner.className = "agentia-diff-banner";
+    banner.setAttribute("role", "status");
+
+    var text = count === 1 ? "1 block changed" : count + " blocks changed";
+    if (since) text += " since " + since;
+    banner.textContent = text;
+
+    doc.insertBefore(banner, doc.firstChild);
   }
 
   /* ---------- wide tables get their own scroll container ---------- */
@@ -282,7 +314,7 @@
   addCopyButtons();
   markSelfLinks();
   expandDetailsForPrint();
-  applyDiff(config.diffRanges);
+  showDiffBanner(applyDiff(config.diffRanges), config.diffSince);
   interceptLinks();
   watchScroll();
   restoreScroll(config.scrollFraction);

@@ -8,6 +8,9 @@ enum PageMessage {
     case scroll(fraction: Double)
     case copy(text: String)
     case openExternal(url: URL)
+    /// The document that asked can run its own script, so the click may not
+    /// have come from the reader. Show them the URL first.
+    case confirmOpenExternal(url: URL)
 }
 
 struct OutlineItem: Decodable, Equatable {
@@ -62,6 +65,11 @@ final class HardenedWebView: WKWebView {
     private var networkAllowedForCurrentDocument = false
 
     private var bridgeInstalled = false
+
+    /// The profile the current document loaded under. Needed because a raw
+    /// artifact has no shell script and so never announces itself — see
+    /// `webView(_:didFinish:)`.
+    private var currentProfile: RenderProfile = .markdown
 
     private static let messageHandlerName = "agentia"
 
@@ -200,6 +208,7 @@ final class HardenedWebView: WKWebView {
             installContentRuleList()
         }
         setBridgeInstalled(profile == .markdown)
+        currentProfile = profile
         blockedRequestCount = 0
         schemeHandler.setDocument(html: html, assetRoot: assetRoot)
         load(URLRequest(url: ArtifactSchemeHandler.documentURL))
@@ -219,32 +228,35 @@ extension HardenedWebView: WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.cancel)
-            return
-        }
+        let url = navigationAction.request.url
 
-        // The only navigation ever permitted is the initial load of the
-        // document itself. Anything else — a meta refresh, a form post, script
-        // setting location — is refused, so an artifact cannot replace itself
-        // with something else.
-        //
-        // The host is restricted to "doc" as well as the scheme: script may
-        // navigate to artifact://asset/... to replace the view with a raw local
-        // file, which buys it a page with no CSP at all. There is no legitimate
-        // navigation to an asset.
-        if url.scheme == ArtifactSchemeHandler.scheme,
-           url.host == ArtifactSchemeHandler.documentHost {
+        // The decision itself lives in AgentiaCore.NavigationPolicy so it can
+        // be tested; this method is only the wiring. The only navigation ever
+        // permitted is the document's own load, so a meta refresh, a form post
+        // or script setting location cannot replace the view — and for HTML
+        // artifacts, which run no shell script, this is the only thing standing
+        // between a link and the host.
+        switch NavigationPolicy.decide(
+            url: url,
+            isLinkActivation: navigationAction.navigationType == .linkActivated,
+            documentCanScript: currentProfile == .htmlArtifact,
+            documentScheme: ArtifactSchemeHandler.scheme,
+            documentHost: ArtifactSchemeHandler.documentHost
+        ) {
+        case .allow:
             decisionHandler(.allow)
-            return
-        }
-
-        if navigationAction.navigationType == .linkActivated {
-            pageDelegate?.webView(self, didReceive: .openExternal(url: url))
-        } else {
+        case .openExternally:
+            if let url { pageDelegate?.webView(self, didReceive: .openExternal(url: url)) }
+            decisionHandler(.cancel)
+        case .confirmBeforeOpening:
+            if let url {
+                pageDelegate?.webView(self, didReceive: .confirmOpenExternal(url: url))
+            }
+            decisionHandler(.cancel)
+        case .block:
             noteBlockedRequest()
+            decisionHandler(.cancel)
         }
-        decisionHandler(.cancel)
     }
 
     func webView(
@@ -253,6 +265,16 @@ extension HardenedWebView: WKNavigationDelegate {
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // A markdown page announces itself from shell.js once it has decorated
+        // the DOM, which is a truer "ready" than didFinish. A raw artifact runs
+        // no shell script and has no bridge to announce itself through, so this
+        // is the only signal it will ever give — without it the launch
+        // measurement would silently never fire for HTML documents.
+        guard currentProfile != .markdown else { return }
+        pageDelegate?.webView(self, didReceive: .ready(outline: [], blockCount: 0))
     }
 
 }

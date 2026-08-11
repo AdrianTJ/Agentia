@@ -260,6 +260,22 @@ body {
 .doc .footnotes ol { padding-left: 1.2em; }
 .doc a.footnote-ref { text-decoration: none; font-size: .82em; vertical-align: super; }
 
+/* ---- diff banner ----
+   Lives inside .doc, so measure and padding come from the theme and the banner
+   cannot drift out of alignment with the text it is describing. */
+.doc .agentia-diff-banner {
+  margin: 0 0 1.5em;
+  font-size: 0.85em;
+  color: var(--diff-mod);
+  letter-spacing: 0.01em;
+}
+
+/* The tint is what the banner is explaining, so it should not be printed as
+   though it were part of the document. */
+@media print {
+  .agentia-diff-banner { display: none; }
+}
+
 /* ---- diff decorations, applied by shell.js from bootstrap data ---- */
 .doc .agentia-diff {
   /* The bleed makes the tint reach past the text column without changing

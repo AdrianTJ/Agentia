@@ -54,13 +54,27 @@ because any one of them can be wrong:
 3. **Navigation delegate.** The only permitted navigation is the document's own load. A
    document cannot replace itself with something else.
 
-Two profiles differ *only* in scripting:
+The two profiles differ in scripting, and in how much of the page is ours:
 
 | | Markdown | HTML artifact |
 | --- | --- | --- |
 | Document's own JS | cannot run | runs |
 | Network | none | none, with a per-document override |
 | Storage | non-persistent | non-persistent |
+| Page assembly | rendered into the shell | **served as authored** |
+
+A Markdown file becomes a fragment inside the reading shell, which owns the typography and
+runs one hash-pinned script. An HTML artifact arrives complete, so the shell would only
+damage it: it is served as its own document with a CSP `<meta>` injected and nothing else
+added — no stylesheet, no script, no DOM rewriting. See `Sources/AgentiaCore/RawArtifact.swift`,
+which is mostly an argument about where that `<meta>` has to land: inside a comment or a
+script body it is not a weaker policy, it is no policy, and the page looks identical either
+way.
+
+Losing the shell for artifacts also removes its link interception. That is deliberate — the
+artifact profile already permits `'unsafe-inline'`, so a `javascript:` link grants nothing the
+document's own `<script>` could not do, and navigation is contained host-side by the
+navigation delegate, which the page cannot remove.
 
 The parser is **not** a sanitiser, and the tests pin that: `tagfilter` escapes `<script>` and
 `<iframe>`, but `onerror=` passes straight through. The CSP is load-bearing, not a second
@@ -70,8 +84,8 @@ layer.
 
 ```bash
 swift build                           # core, app, and the render CLI
-swift test                            # 114 checks, green in debug and release
-node tools/webtest/run-tests.mjs      # render shell in real Chromium — 160 checks
+swift test                            # 152 checks, green in debug and release
+node tools/webtest/run-tests.mjs      # render shell in real Chromium — 177 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 tools/make-app.sh                     # builds .build/Agentia.app
 ```
@@ -91,10 +105,10 @@ Being honest about this matters more than looking finished.
 | Layer | Status |
 | --- | --- |
 | Parsing core | **Tested.** 51 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
-| Render shell, themes, print CSS | **Tested in a real browser.** 160 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
+| Render shell, themes, print CSS | **Tested in a real browser.** 177 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
 | Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors, plus XCTest |
-| AgentiaCore Swift | **Tested.** 114 XCTest cases, run in both debug and release |
-| macOS app layer | **Compiles and launches.** No automated coverage — it is AppKit and WebKit wiring, verified by use |
+| AgentiaCore Swift | **Tested.** 152 XCTest cases, run in both debug and release |
+| macOS app layer | **Partly tested.** The navigation guard moved into AgentiaCore so it could be; the rest is AppKit and WebKit wiring, verified by use |
 
 Two harnesses exist to keep implementations that must agree from drifting:
 
@@ -192,7 +206,6 @@ Found by dogfooding and not yet fixed. Recorded rather than quietly dropped.
 
 | Issue | Impact |
 | --- | --- |
-| HTML artifacts are wrapped in the shell's `<main class="doc">` and inherit its typography, so a self-contained dashboard gets clamped to a 68ch measure and re-themed | High for the artifact-viewer use case. Wants a raw-document path that skips `.doc` and the shell's DOM mutations |
 | Mermaid fences render as plain code blocks; `$…$` math renders as raw TeX | Deferred deliberately (both need JS, behind a per-document opt-in), but very visible in agent output |
 | Dark mode looks nearly identical across all six themes — only the accent differs | Paper and ink come from `base.css`; whether that is right is a design call |
 | A wide table gives no visual hint that columns continue off-screen | It scrolls, but nothing says so |

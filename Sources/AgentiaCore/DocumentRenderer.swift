@@ -62,6 +62,31 @@ public struct DocumentRenderer: Sendable {
         return DocumentSnapshot(url: url, kind: .forURL(url), source: text)
     }
 
+    /// The complete page for documents that are served as themselves rather
+    /// than rendered into the shell, or nil for the ones that are.
+    ///
+    /// This exists so the raw-versus-shell decision lives in exactly one place.
+    /// It did not, once: the app's window controller assembled its own page and
+    /// never called `page(for:)`, so when artifacts moved to the raw path the
+    /// change reached this type, the CLI and the browser suite — but not the
+    /// app, which went on splicing artifacts into `<main class="doc">` while a
+    /// full suite of green tests said otherwise.
+    public static func standalonePage(for snapshot: DocumentSnapshot) -> String? {
+        switch snapshot.kind {
+        case .markdown, .plainText:
+            return nil
+        case .html:
+            // The script hash is irrelevant here: the artifact profile pins no
+            // hash, because the document's own script is meant to run.
+            return RawArtifact.page(
+                html: snapshot.source,
+                csp: RenderShell.contentSecurityPolicy(
+                    profile: .htmlArtifact, scriptHash: ""
+                )
+            )
+        }
+    }
+
     /// Produce the full page for a snapshot.
     public func page(
         for snapshot: DocumentSnapshot,
@@ -69,13 +94,19 @@ public struct DocumentRenderer: Sendable {
         appearance: RenderShell.Appearance = .light,
         bootstrap: RenderShell.Bootstrap = .empty
     ) throws -> String {
+        // An HTML artifact is its own document and never reaches the shell —
+        // wrapping it in `.doc` re-typeset and re-themed work that arrived
+        // complete. See RawArtifact.
+        if let standalone = Self.standalonePage(for: snapshot) {
+            return standalone
+        }
+
         let fragment: String
         switch snapshot.kind {
         case .markdown:
             fragment = try MarkdownRenderer.renderHTML(snapshot.source)
         case .html:
-            // An HTML artifact is its own document; it is served unchanged and
-            // contained by the CSP and the host's content rule list.
+            // Unreachable: handled by standalonePage above.
             fragment = snapshot.source
         case .plainText:
             fragment = "<pre><code>"

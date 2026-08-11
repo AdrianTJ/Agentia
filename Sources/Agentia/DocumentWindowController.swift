@@ -24,6 +24,8 @@ final class DocumentWindowController: NSWindowController {
     /// The contents as of the previous write, kept in memory so "what changed"
     /// costs nothing extra — the watcher is already running.
     private var previousSource: String?
+    /// Formatted time the baseline was captured, for the diff banner.
+    private var baselineTakenAt: String?
     private var watcher: FileWatcher?
 
     private var mode: ViewMode = .rendered
@@ -124,6 +126,7 @@ final class DocumentWindowController: NSWindowController {
             // against an unrelated file is noise.
             if self.snapshot?.url != url {
                 previousSource = nil
+                baselineTakenAt = nil
                 lastScrollFraction = 0
                 mode = .rendered
             }
@@ -172,9 +175,20 @@ final class DocumentWindowController: NSWindowController {
         guard fresh.source != current.source else { return }
 
         previousSource = current.source
+        baselineTakenAt = Self.clockFormatter.string(from: current.readAt)
         snapshot = fresh
         render()
     }
+
+    /// Wall-clock time only. The baseline is always from this session — the app
+    /// has to be open to have seen the previous write — so a date would be
+    /// noise, and "14:22:07" is what a reader matches against their own memory
+    /// of when the agent last ran.
+    private static let clockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
 
     // MARK: - Rendering
 
@@ -183,7 +197,8 @@ final class DocumentWindowController: NSWindowController {
 
         let bootstrap = RenderShell.Bootstrap(
             diffRanges: diffRangesForCurrentMode(),
-            scrollFraction: lastScrollFraction
+            scrollFraction: lastScrollFraction,
+            diffSince: mode == .diff ? baselineTakenAt : nil
         )
 
         let content: String
@@ -198,6 +213,18 @@ final class DocumentWindowController: NSWindowController {
             profile = .markdown
 
         case .rendered, .diff:
+            // An HTML artifact is served as its own document: no shell, no
+            // theme, no injected script. Nothing below applies to it, so this
+            // returns rather than falling through — and it asks AgentiaCore
+            // rather than deciding here, so the app and the core renderer
+            // cannot disagree about which documents are served raw.
+            if let standalone = DocumentRenderer.standalonePage(for: snapshot) {
+                webView.load(page: standalone,
+                             assetRoot: snapshot.assetRoot,
+                             profile: snapshot.kind.renderProfile)
+                return
+            }
+
             switch snapshot.kind {
             case .markdown:
                 // A whitespace-only file is indistinguishable from an empty
@@ -265,12 +292,19 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc func toggleDiff(_ sender: Any?) {
-        guard previousSource != nil else {
-            NSSound.beep() // nothing to compare against yet
-            return
-        }
+        // Unreachable without a baseline: the menu item and toolbar button are
+        // disabled until the file has been rewritten once. It used to beep
+        // instead, which told the reader they had done something wrong rather
+        // than that the feature was not available yet.
+        guard canShowDiff else { return }
         mode = (mode == .diff) ? .rendered : .diff
         render()
+    }
+
+    /// A diff needs something to compare against, which only exists once the
+    /// file has changed on disk while open.
+    var canShowDiff: Bool {
+        previousSource != nil && snapshot?.kind != .html
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
@@ -281,6 +315,13 @@ final class DocumentWindowController: NSWindowController {
         }
         sidebarView?.isHidden.toggle()
     }
+
+    /// `SidebarView` is a stub that is never added to the view hierarchy, so
+    /// toggling it does nothing a reader can see. Until it is built, the
+    /// controls that drive it are disabled rather than left looking functional
+    /// — a button that does nothing reads as a broken app, not an absent
+    /// feature.
+    var isSidebarImplemented: Bool { false }
 
     @objc func copyAll(_ sender: Any?) {
         guard let snapshot else { return }
@@ -352,6 +393,42 @@ final class DocumentWindowController: NSWindowController {
     }
 }
 
+// MARK: - Enabling and disabling commands
+
+/// One place decides whether a command is available, and both the menu and the
+/// toolbar ask it. Without this the app offered every command at all times:
+/// Export PDF with no document open, Toggle Diff with nothing to compare
+/// against, and a Documents button wired to a sidebar that does not exist yet.
+extension DocumentWindowController: NSMenuItemValidation, NSToolbarItemValidation {
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        isEnabled(item.action)
+    }
+
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        isEnabled(item.action)
+    }
+
+    private func isEnabled(_ action: Selector?) -> Bool {
+        switch action {
+        case #selector(toggleSidebar(_:)):
+            return isSidebarImplemented
+        case #selector(toggleDiff(_:)):
+            return canShowDiff
+        case #selector(exportPDF(_:)), #selector(copyAll(_:)),
+             #selector(revealInFinder(_:)), #selector(performFind(_:)):
+            return snapshot != nil
+        case #selector(toggleSource(_:)):
+            // Source view works for anything, including an HTML artifact — it
+            // is the one way to read an artifact's markup rather than run it.
+            return snapshot != nil
+        default:
+            // Open, Close, Quit and anything else the responder chain handles.
+            return true
+        }
+    }
+}
+
 // MARK: - Page messages
 
 extension DocumentWindowController: HardenedWebViewDelegate {
@@ -369,10 +446,49 @@ extension DocumentWindowController: HardenedWebViewDelegate {
             Clipboard.writePlain(text)
 
         case .openExternal(let url):
-            // An artifact never navigates itself; links go to the browser.
-            guard let scheme = url.scheme?.lowercased(),
-                  scheme == "http" || scheme == "https" || scheme == "mailto" else { return }
+            // Scheme filtering happened in NavigationPolicy; by here the URL is
+            // one a browser should get.
             NSWorkspace.shared.open(url)
+
+        case .confirmOpenExternal(let url):
+            confirmOpenExternal(url)
+        }
+    }
+
+    /// Show the reader where a link goes before leaving the app.
+    ///
+    /// Only artifacts reach here, and only because they can script: WebKit
+    /// classifies `anchor.click()` from a document's own code as a link
+    /// activation, indistinguishable from a real one. Opening it silently would
+    /// let an artifact put document text in a query string and hand it to the
+    /// browser — an exfiltration channel that never touches the web view, so
+    /// neither `connect-src 'none'` nor the content rule list would see it.
+    ///
+    /// The whole URL is shown, not a shortened form: the query string is the
+    /// part worth reading.
+    private func confirmOpenExternal(_ url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Open this link in your browser?"
+        alert.informativeText = """
+        This document asked to open:
+
+        \(url.absoluteString)
+
+        It can run its own code, so this may not have come from your click.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+
+        let open: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .alertFirstButtonReturn else { return }
+            NSWorkspace.shared.open(url)
+        }
+
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: open)
+        } else {
+            open(alert.runModal())
         }
     }
 
