@@ -187,6 +187,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(withTitle: "Close",
                          action: #selector(NSWindow.performClose(_:)),
                          keyEquivalent: "w")
+        fileMenu.addItem(withTitle: "Save",
+                         action: #selector(DocumentWindowController.saveDocument(_:)),
+                         keyEquivalent: "s")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Export as PDF…",
                          action: #selector(DocumentWindowController.exportPDF(_:)),

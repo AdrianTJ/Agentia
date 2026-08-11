@@ -9,11 +9,26 @@ public struct DocumentSnapshot: Sendable, Equatable {
     /// When the bytes were read, for the "changed since" label.
     public let readAt: Date
 
-    public init(url: URL, kind: DocumentKind, source: String, readAt: Date = Date()) {
+    /// What the file looked like when it was read, so a save can tell whether
+    /// anything rewrote it in the meantime. Nil when the file could not be
+    /// stat'd, which the save path treats as "assume it changed".
+    public let modifiedOnDisk: Date?
+    public let sizeOnDisk: Int?
+
+    public init(
+        url: URL,
+        kind: DocumentKind,
+        source: String,
+        readAt: Date = Date(),
+        modifiedOnDisk: Date? = nil,
+        sizeOnDisk: Int? = nil
+    ) {
         self.url = url
         self.kind = kind
         self.source = source
         self.readAt = readAt
+        self.modifiedOnDisk = modifiedOnDisk
+        self.sizeOnDisk = sizeOnDisk
     }
 
     public var displayName: String { url.lastPathComponent }
@@ -59,7 +74,13 @@ public struct DocumentRenderer: Sendable {
             throw Error.undecodable(url)
         }
 
-        return DocumentSnapshot(url: url, kind: .forURL(url), source: text)
+        // Taken after the read, not before: a file rewritten *during* the read
+        // must look changed at save time, not identical.
+        let fingerprint = DocumentSaving.fingerprint(of: url)
+
+        return DocumentSnapshot(url: url, kind: .forURL(url), source: text,
+                                modifiedOnDisk: fingerprint.modified,
+                                sizeOnDisk: fingerprint.size)
     }
 
     /// The complete page for documents that are served as themselves rather
