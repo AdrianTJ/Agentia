@@ -84,7 +84,7 @@ layer.
 
 ```bash
 swift build                           # core, app, and the render CLI
-swift test                            # 168 checks, green in debug and release
+swift test                            # 177 checks, green in debug and release
 node tools/webtest/run-tests.mjs      # render shell in real Chromium — 181 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 tools/make-app.sh                     # builds .build/Agentia.app
@@ -107,7 +107,7 @@ Being honest about this matters more than looking finished.
 | Parsing core | **Tested.** 51 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
 | Render shell, themes, print CSS | **Tested in a real browser.** 181 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
 | Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors, plus XCTest |
-| AgentiaCore Swift | **Tested.** 168 XCTest cases, run in both debug and release |
+| AgentiaCore Swift | **Tested.** 177 XCTest cases, run in both debug and release |
 | macOS app layer | **Partly tested.** The navigation guard moved into AgentiaCore so it could be; the rest is AppKit and WebKit wiring, verified by use |
 
 Two harnesses exist to keep implementations that must agree from drifting:
@@ -222,8 +222,19 @@ blocks so it cannot pass by having nothing to count.
 
 ## Not built yet
 
-Folder mode, Quick Look extension, Mermaid and KaTeX behind a per-document opt-in,
-App Intents, notarisation and Sparkle.
+Four items remain, and three of them are blocked by packaging rather than by effort.
+Recording why, so nobody re-derives it:
+
+| Item | What stands in the way |
+| --- | --- |
+| Quick Look extension | SwiftPM builds only `executable` and `library` products — there is no app-extension product type, so this needs an Xcode project. It is also no longer forced: the measured ~436 ms launch sits inside the "proceed as designed" band rather than past it, so Quick Look is a nice-to-have, not the fallback the original plan made it |
+| App Intents | Intents are registered by an Xcode build phase that extracts metadata at compile time. Without it the definitions compile and never appear in Shortcuts |
+| Notarisation and Sparkle | Needs a Developer ID certificate. `security find-identity -v -p codesigning` reports 0 valid identities here, so the app is ad-hoc signed and cannot be notarised from this machine |
+| Mermaid and KaTeX | Not blocked, just expensive and unresolved. Both are megabytes of vendored JavaScript, and the markdown profile pins `script-src` to one hash — so each needs a second pinned hash and a per-document opt-in, which is a security surface worth designing rather than bolting on |
+
+Folder mode is built: the sidebar lists the documents beside the one being read, newest
+first, because an agent writes a run — report, summary, dashboard — into one directory and
+moving between those is the navigation this app is for.
 
 Syntax highlighting is native and lexical — `SyntaxHighlighter` in AgentiaCore, one tokeniser
 driven by a small table per language. The proposal named tree-sitter; that would mean the

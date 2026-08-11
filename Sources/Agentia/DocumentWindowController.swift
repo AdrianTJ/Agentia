@@ -391,7 +391,21 @@ final class DocumentWindowController: NSWindowController {
     /// so a reader who never opens it pays nothing.
     private func refreshSidebar() {
         guard let sidebarView, sidebarWidth != nil else { return }
-        sidebarView.reload(documents: openDocuments, selected: snapshot?.url)
+
+        // The folder the current document lives in, not the session's history.
+        // An agent writes a run — report, summary, dashboard — into one
+        // directory, and moving between those is the navigation this is for;
+        // the history is a list of things already read. Falls back to the
+        // history when nothing is open.
+        let documents: [URL]
+        if let root = snapshot?.assetRoot {
+            let folder = FolderScanner.documents(in: root)
+            documents = folder.isEmpty ? openDocuments : folder
+        } else {
+            documents = openDocuments
+        }
+
+        sidebarView.reload(documents: documents, selected: snapshot?.url)
     }
 
     var isSidebarImplemented: Bool { true }
