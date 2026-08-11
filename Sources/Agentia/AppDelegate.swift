@@ -23,6 +23,14 @@ enum Launch {
     }
 
     /// Reports milliseconds from process start, once, on first paint.
+    ///
+    /// This fires from the page's `ready` message, which the page only sends
+    /// once its inline script runs. WebKit throttles the script of a fully
+    /// occluded window, so a document opened straight into the background (for
+    /// example `open -g`) may not report until the window is first shown — at
+    /// which point WebKit un-throttles and everything runs. So a missing
+    /// signpost after a background launch is expected, not a regression, and
+    /// the measurement is only meaningful for a foreground open anyway.
     static func reportFirstPaint() {
         guard !didLogFirstPaint else { return }
         didLogFirstPaint = true

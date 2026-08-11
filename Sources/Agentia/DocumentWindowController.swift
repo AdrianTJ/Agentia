@@ -40,6 +40,9 @@ final class DocumentWindowController: NSWindowController {
     private var sidebarWidth: NSLayoutConstraint?
     private var findBar: FindBar?
     private var findBarHeight: NSLayoutConstraint?
+    /// Bumped on every search so a stale async result cannot overwrite the
+    /// status of a newer one.
+    private var findGeneration = 0
     private var toolbarController: DocumentToolbar?
 
     init(webView: HardenedWebView) {
@@ -89,6 +92,15 @@ final class DocumentWindowController: NSWindowController {
         // again, with the document still loaded in the web view.
         window.isReleasedWhenClosed = false
 
+        // A single-window viewer that manages and autosaves its own frame has
+        // no use for macOS state restoration, and leaving it on would let the
+        // system restore a window on relaunch that then fights this app's own
+        // frame autosave and Dock-icon reopen. (Note: there is also a 500×500
+        // off-screen window in the process — that one is a WebKit-internal host
+        // window, not restoration, and is not removed by this. It is invisible
+        // and unlisted, so it is left alone.)
+        window.isRestorable = false
+
         window.contentView = makeContentView()
 
         let toolbar = DocumentToolbar(target: self)
@@ -136,7 +148,15 @@ final class DocumentWindowController: NSWindowController {
 
         let findHeight = find.heightAnchor.constraint(equalToConstant: 0)
         findBarHeight = findHeight
+        // clipsToBounds defaults differ by macOS version (NO on 14+, YES
+        // before), so both collapsible panes pin it rather than rely on the
+        // default. Hidden as well as zero-sized, so nothing inside them is in
+        // the key-view loop while collapsed — a Tab must not reach a control in
+        // a pane the reader cannot see.
         find.clipsToBounds = true
+        find.isHidden = true
+        sidebar.clipsToBounds = true
+        sidebar.isHidden = true
 
         NSLayoutConstraint.activate([
             find.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
@@ -195,11 +215,15 @@ final class DocumentWindowController: NSWindowController {
             }
 
             self.snapshot = snapshot
-            if !openDocuments.contains(url) {
+            // Canonicalised before the membership test: the same file reached
+            // by a symlink, an alias, or a case-differing path on a
+            // case-insensitive volume is one document, not two, and must not
+            // produce two rows.
+            if !openDocuments.contains(where: { sameFile($0, url) }) {
                 openDocuments.insert(url, at: 0)
             }
             // Only costs anything once the reader has opened the sidebar.
-            if sidebarWidth?.constant ?? 0 > 0 { refreshSidebar() }
+            if isSidebarShowing { refreshSidebar() }
 
             startWatching(url)
             render()
@@ -208,8 +232,21 @@ final class DocumentWindowController: NSWindowController {
             window?.representedURL = url
 
         } catch {
+            // The sidebar may already have moved its selection to the row the
+            // reader clicked — a file since deleted or renamed. Drop it and put
+            // the highlight back on the document actually showing, so the list
+            // never points at something that is not on screen.
+            openDocuments.removeAll { sameFile($0, url) }
+            if isSidebarShowing { refreshSidebar() }
             presentError(error, whileOpening: url)
         }
+    }
+
+    private var isSidebarShowing: Bool { (sidebarWidth?.constant ?? 0) > 0 }
+
+    private func sameFile(_ a: URL, _ b: URL) -> Bool {
+        a.resolvingSymlinksInPath().standardizedFileURL
+            == b.resolvingSymlinksInPath().standardizedFileURL
     }
 
     @objc func openDocument(_ sender: Any?) {
@@ -373,16 +410,28 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
-        guard let sidebarWidth else { return }
-        let showing = sidebarWidth.constant > 0
-        refreshSidebar()
+        guard let sidebarWidth, let sidebarView else { return }
+        let willShow = sidebarWidth.constant == 0
 
-        NSAnimationContext.runAnimationGroup { context in
+        if willShow {
+            // Populate only on the way in — a reader who never opens it pays
+            // nothing — and unhide before animating so it fades in with width.
+            refreshSidebar()
+            sidebarView.isHidden = false
+        }
+
+        NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.15
             context.allowsImplicitAnimation = true
-            sidebarWidth.animator().constant = showing ? 0 : SidebarView.preferredWidth
+            sidebarWidth.animator().constant = willShow ? SidebarView.preferredWidth : 0
             window?.contentView?.layoutSubtreeIfNeeded()
-        }
+        }, completionHandler: { [weak self] in
+            // Hidden once collapsed, not merely zero-width. A zero-width table
+            // stays in the key-view loop, so a Tab could focus it and its
+            // arrow keys would swap the document with no visible sidebar to
+            // explain why.
+            if !willShow { self?.sidebarView?.isHidden = true }
+        })
     }
 
     /// Keep the list in step with what has been opened.
@@ -460,6 +509,7 @@ final class DocumentWindowController: NSWindowController {
     /// rendered page rather than the source, which is what a reader wants.
     @objc func performFind(_ sender: Any?) {
         guard let findBarHeight, let findBar else { return }
+        findBar.isHidden = false
         findBarHeight.constant = FindBar.preferredHeight
         window?.contentView?.layoutSubtreeIfNeeded()
         findBar.focus()
@@ -468,6 +518,7 @@ final class DocumentWindowController: NSWindowController {
     private func hideFindBar() {
         guard let findBarHeight else { return }
         findBarHeight.constant = 0
+        findBar?.isHidden = true
         window?.contentView?.layoutSubtreeIfNeeded()
         // Clearing the highlight matters: leaving the page speckled with
         // matches after the bar is gone looks like rendering damage.
@@ -476,12 +527,25 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func runFind(_ query: String, forward: Bool) {
+        // Clearing the field must clear the highlight, not just the status.
+        // Otherwise backspacing a matched query to empty leaves the document
+        // speckled with matches until the bar is dismissed — the same "looks
+        // like rendering damage" the dismiss path already guards against.
         guard !query.isEmpty else {
+            webView.find("", configuration: WKFindConfiguration()) { _ in }
             findBar?.report(found: true)
             return
         }
+
+        // WKWebView.find is async and fired per keystroke, so a slow older
+        // search can resolve after a newer one and paint a stale "Not found"
+        // for a query the reader has already moved past. Only the newest
+        // request is allowed to touch the status line.
+        findGeneration += 1
+        let generation = findGeneration
         find(query, forward: forward) { [weak self] found in
-            self?.findBar?.report(found: found)
+            guard let self, generation == self.findGeneration else { return }
+            self.findBar?.report(found: found)
         }
     }
 

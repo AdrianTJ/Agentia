@@ -193,8 +193,13 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
             return button(identifier, symbol: "arrow.down.doc", label: "Export PDF",
                           action: #selector(DocumentWindowController.exportPDF(_:)))
         case ItemID.share:
-            return button(identifier, symbol: "square.and.arrow.up", label: "Share",
-                          action: #selector(DocumentWindowController.shareDocument(_:)))
+            // View-based, unlike the others: the share popover anchors to the
+            // control it was launched from, and a system-rendered toolbar item
+            // exposes no `view` to anchor to — so the picker would pop from the
+            // window content, nowhere near the button. A real NSButton is that
+            // anchor, and it reaches shareDocument(_:) with itself as sender.
+            return viewButton(identifier, symbol: "square.and.arrow.up", label: "Share",
+                              action: #selector(DocumentWindowController.shareDocument(_:)))
         case ItemID.reveal:
             return button(identifier, symbol: "folder", label: "Reveal in Finder",
                           action: #selector(DocumentWindowController.revealInFinder(_:)))
@@ -222,6 +227,28 @@ final class DocumentToolbar: NSObject, NSToolbarDelegate {
         item.target = target
         item.action = action
         item.isBordered = true
+        return item
+    }
+
+    /// A toolbar item backed by a real NSButton, for the one control that needs
+    /// a view to anchor a popover to.
+    private func viewButton(
+        _ identifier: NSToolbarItem.Identifier,
+        symbol: String,
+        label: String,
+        action: Selector
+    ) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = label
+        item.toolTip = label
+
+        let button = NSButton(
+            image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+                ?? NSImage(),
+            target: target, action: action)
+        button.bezelStyle = .texturedRounded
+        button.setAccessibilityLabel(label)
+        item.view = button
         return item
     }
 

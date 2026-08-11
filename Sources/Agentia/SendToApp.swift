@@ -30,8 +30,13 @@ enum SendToApp {
     /// document in the app you are already reading it in is noise.
     static func handlers(for url: URL) -> [URL] {
         let all = NSWorkspace.shared.urlsForApplications(toOpen: url)
-        let ourselves = Bundle.main.bundleURL
-        return all.filter { $0.standardizedFileURL != ourselves.standardizedFileURL }
+        // Resolve symlinks, not just `.`/`..`: an install where
+        // /Applications/Agentia.app is a symlink (a Homebrew Cask layout, say)
+        // makes Launch Services' resolved handler disagree with
+        // Bundle.main.bundleURL, and Agentia would list itself in its own Open
+        // With menu — the noise this exclusion exists to remove.
+        let ourselves = Bundle.main.bundleURL.resolvingSymlinksInPath()
+        return all.filter { $0.resolvingSymlinksInPath() != ourselves }
     }
 
     static func displayName(of application: URL) -> String {
