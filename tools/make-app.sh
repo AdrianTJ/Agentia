@@ -42,6 +42,14 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Agentia"
 cp "$ROOT/Sources/Agentia/Info.plist" "$APP/Contents/Info.plist"
 
+# The icon, named to match CFBundleIconFile. Regenerate with design/make-icon.sh
+# after editing design/icon.svg; it is committed so a build needs no Chromium.
+if [ -f "$ROOT/Sources/Agentia/Agentia.icns" ]; then
+  cp "$ROOT/Sources/Agentia/Agentia.icns" "$APP/Contents/Resources/Agentia.icns"
+else
+  echo "   no Agentia.icns — run design/make-icon.sh for the app icon" >&2
+fi
+
 # SwiftPM emits resources as a .bundle beside the binary. It must land in
 # Contents/Resources: Bundle.module only searches Bundle.main.resourceURL,
 # the defining bundle's resourceURL, and Bundle.main.bundleURL. Contents/MacOS
@@ -51,6 +59,11 @@ cp "$ROOT/Sources/Agentia/Info.plist" "$APP/Contents/Info.plist"
 BIN_DIR="$(dirname "$BIN")"
 for bundle in "$BIN_DIR"/*.bundle; do
   [ -e "$bundle" ] || continue
+  # Test fixtures are built into the same directory and were being shipped
+  # inside the app. They are dead weight a user downloads and never runs.
+  case "$(basename "$bundle")" in
+    *Tests.bundle) continue ;;
+  esac
   cp -R "$bundle" "$APP/Contents/Resources/"
 done
 
