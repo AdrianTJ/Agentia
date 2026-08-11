@@ -102,11 +102,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hasOpenedDocument = true
         }
         windowController.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
+
+        // Deliberately NOT ignoringOtherApps. That variant interrupts whatever
+        // the user is doing and redirects their in-flight keystrokes and clicks
+        // to this app — which cost a window here more than once: a click meant
+        // for another app landed on the close button, and since closing the
+        // only window used to quit the app, Agentia simply vanished.
+        //
+        // Launch Services already activates an app it launched to open a file,
+        // so the double-click path does not need the hammer. This only brings
+        // the window forward when the app was already running.
+        NSApp.activate(ignoringOtherApps: false)
     }
 
+    /// A viewer should survive closing its window, the way Preview and TextEdit
+    /// do — clicking the close button is not a request to end the session.
+    /// Reopening is handled below, so the app cannot become an unreachable Dock
+    /// icon.
+    ///
+    /// Note there is still no Close item in the File menu, so ⌘W does nothing;
+    /// the red button is the only way to close. Worth adding, but it is a
+    /// separate change from making the close survivable.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
+    }
+
+    /// Clicking the Dock icon with no window open brings the document back,
+    /// still showing whatever was last open.
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows: Bool
+    ) -> Bool {
+        guard !hasVisibleWindows else { return true }
+        windowController.showWindow(nil)
+        return true
     }
 
     // MARK: - Menu
