@@ -40,9 +40,9 @@ let package = Package(
         .executableTarget(
             name: "Agentia",
             dependencies: ["AgentiaCore"],
-            // Consumed by tools/make-app.sh when assembling the bundle, not a
-            // SwiftPM resource.
-            exclude: ["Info.plist"]
+            // Consumed by tools/make-app.sh when assembling the bundle, not
+            // SwiftPM resources.
+            exclude: ["Info.plist", "Agentia.icns"]
         ),
         .executableTarget(
             name: "agentia-render-cli",

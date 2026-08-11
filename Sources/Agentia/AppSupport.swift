@@ -23,6 +23,29 @@ enum Preferences {
         return name == .darkAqua ? .dark : .light
     }
 
+    /// Body text multiplier. 1.0 is whatever the theme chose.
+    static var fontScale: Double {
+        get {
+            let stored = defaults.double(forKey: "fontScale")
+            // A missing key reads as 0, which is not a scale anyone asked for.
+            guard stored > 0 else { return 1.0 }
+            return min(max(stored, RenderShell.Display.range.lowerBound),
+                       RenderShell.Display.range.upperBound)
+        }
+        set {
+            defaults.set(min(max(newValue, RenderShell.Display.range.lowerBound),
+                             RenderShell.Display.range.upperBound),
+                         forKey: "fontScale")
+        }
+    }
+
+    /// The steps ⌘+ and ⌘− move through.
+    ///
+    /// Multiplicative rather than a fixed increment, so each press is the same
+    /// perceptual change at any size — +0.1 is a big jump at 0.8 and barely
+    /// visible at 2.0.
+    static let fontScaleSteps: [Double] = [0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0]
+
     static func pinAppearance(_ appearance: RenderShell.Appearance?) {
         if let appearance {
             defaults.set(appearance.rawValue, forKey: "appearance")

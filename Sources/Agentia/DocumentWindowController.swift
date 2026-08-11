@@ -44,6 +44,9 @@ final class DocumentWindowController: NSWindowController {
     /// status of a newer one.
     private var findGeneration = 0
     private var toolbarController: DocumentToolbar?
+    /// Built the first time Settings is opened, then kept — it is cheap to hold
+    /// and reopening should not lose the window's position.
+    private var settingsController: SettingsWindowController?
 
     init(webView: HardenedWebView) {
         self.webView = webView
@@ -354,7 +357,8 @@ final class DocumentWindowController: NSWindowController {
             title: snapshot.displayName,
             appearance: Preferences.appearance,
             profile: profile,
-            bootstrap: bootstrap
+            bootstrap: bootstrap,
+            display: RenderShell.Display(fontScale: Preferences.fontScale)
         ) else { return }
 
         webView.load(page: page, assetRoot: snapshot.assetRoot, profile: profile)
@@ -572,6 +576,56 @@ final class DocumentWindowController: NSWindowController {
         theme = picked
         Preferences.themeID = id
         render()
+    }
+
+    /// Every theme in the bundle, for the menu and the Settings window.
+    var availableThemes: [Theme] { themes }
+    var currentThemeID: String? { theme?.id }
+
+    @objc func showSettings(_ sender: Any?) {
+        if settingsController == nil {
+            settingsController = SettingsWindowController(
+                themes: themes,
+                onChange: { [weak self] themeID, _ in
+                    // Both preferences are already stored; re-render picks up
+                    // the font scale, and selectTheme swaps the stylesheet.
+                    self?.selectTheme(id: themeID)
+                }
+            )
+        }
+        settingsController?.syncFromPreferences()
+        settingsController?.showWindow(nil)
+        settingsController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Steps the reader's text size, keeping to the same ladder the Settings
+    /// slider snaps to so the two cannot disagree.
+    @objc func increaseFontSize(_ sender: Any?) { stepFontSize(by: +1) }
+    @objc func decreaseFontSize(_ sender: Any?) { stepFontSize(by: -1) }
+
+    @objc func resetFontSize(_ sender: Any?) {
+        Preferences.fontScale = 1.0
+        settingsController?.syncFromPreferences()
+        render()
+    }
+
+    private func stepFontSize(by delta: Int) {
+        let steps = Preferences.fontScaleSteps
+        let current = Preferences.fontScale
+        let index = steps.enumerated()
+            .min { abs($0.element - current) < abs($1.element - current) }?.offset ?? 3
+        let next = min(max(index + delta, 0), steps.count - 1)
+        guard steps[next] != current else { return }
+
+        Preferences.fontScale = steps[next]
+        settingsController?.syncFromPreferences()
+        render()
+    }
+
+    @objc func selectThemeFromMenu(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        selectTheme(id: id)
+        settingsController?.syncFromPreferences()
     }
 
     // MARK: - Errors

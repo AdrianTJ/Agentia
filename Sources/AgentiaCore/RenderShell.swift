@@ -64,6 +64,39 @@ public struct RenderShell: Sendable {
         case light, dark
     }
 
+    /// The reader's display preferences, applied over the theme.
+    ///
+    /// Deliberately a multiplier rather than an absolute size: each theme picks
+    /// a body size that suits its measure and typeface, and pinning everything
+    /// to "16px" would flatten those choices into one. Scaling preserves the
+    /// relationship the theme designed.
+    public struct Display: Sendable, Equatable {
+        public var fontScale: Double
+
+        public init(fontScale: Double = 1.0) {
+            self.fontScale = fontScale
+        }
+
+        public static let `default` = Display()
+
+        /// Bounds the scale to something a document can survive.
+        ///
+        /// Below ~0.7 the measure collapses to a few words a line; above ~2 a
+        /// wide table cannot fit the page at any width. Clamped here rather
+        /// than at the UI, so no caller can render an unusable page.
+        public static let range: ClosedRange<Double> = 0.7...2.0
+
+        /// The CSS this becomes. Empty when nothing is customised, so an
+        /// unmodified render carries no extra bytes.
+        public var css: String {
+            let scale = min(max(fontScale, Self.range.lowerBound), Self.range.upperBound)
+            guard scale != 1.0 else { return "" }
+            // Four decimal places: enough for every step the UI offers, and it
+            // cannot emit an exponent, which CSS would not parse.
+            return String(format: ":root{--agentia-scale:%.4f}", scale)
+        }
+    }
+
     private let shellDirectory: URL
 
     public init(shellDirectory: URL) {
@@ -184,7 +217,8 @@ public struct RenderShell: Sendable {
         title: String,
         appearance: Appearance = .light,
         profile: RenderProfile = .markdown,
-        bootstrap: Bootstrap = .empty
+        bootstrap: Bootstrap = .empty,
+        display: Display = .default
     ) throws -> String {
         let template = try read("shell.html")
         let baseCSS = try read("base.css")
@@ -200,6 +234,7 @@ public struct RenderShell: Sendable {
             "TITLE": Self.escapeForHTMLText(title),
             "BASE_CSS": baseCSS,
             "THEME_CSS": theme.css,
+            "USER_CSS": display.css,
             "BOOTSTRAP_JSON": Self.bootstrapJSON(bootstrap),
             "CONTENT": content,
             "SHELL_JS": js,
@@ -272,7 +307,8 @@ public struct RenderShell: Sendable {
 
     static let templateTokens = [
         "{{APPEARANCE}}", "{{CSP}}", "{{TITLE}}", "{{BASE_CSS}}",
-        "{{THEME_CSS}}", "{{BOOTSTRAP_JSON}}", "{{CONTENT}}", "{{SHELL_JS}}",
+        "{{THEME_CSS}}", "{{USER_CSS}}", "{{BOOTSTRAP_JSON}}", "{{CONTENT}}",
+        "{{SHELL_JS}}",
     ]
 
     private func read(_ name: String) throws -> String {

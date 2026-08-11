@@ -86,7 +86,11 @@ html, body {
 
 body {
   font-family: var(--font-body);
-  font-size: var(--size-body);
+  /* --agentia-scale is the reader's font-size preference, injected per render.
+     Multiplying whatever the theme chose keeps every theme's own proportions
+     rather than flattening them all to one absolute size. Defaults to 1, so a
+     page rendered without the preference is unchanged. */
+  font-size: calc(var(--size-body) * var(--agentia-scale, 1));
   line-height: var(--leading);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
