@@ -105,6 +105,7 @@ final class DocumentWindowController: NSWindowController {
         // and unlisted, so it is left alone.)
         window.isRestorable = false
 
+        window.delegate = self
         window.contentView = makeContentView()
 
         let toolbar = DocumentToolbar(target: self)
@@ -600,10 +601,41 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func write(_ text: String, to url: URL) {
+        // Named `current` so it does not shadow the `snapshot` property, which
+        // the re-read below reassigns.
+        guard let current = snapshot else { return }
+
+        // Written back in the encoding it was read in, BOM included. Saving an
+        // untouched Latin-1 file as UTF-8, or dropping a BOM, rewrites a file
+        // the reader never edited — and the text on screen looks identical
+        // either way, so nothing would tell them.
+        guard let data = current.format.encode(text) else {
+            let alert = NSAlert()
+            alert.messageText = "Can't save as \(current.format.displayName)"
+            alert.informativeText = """
+            This document contains characters that \(current.format.displayName) \
+            cannot represent — most likely something typed or pasted just now.
+
+            Saving would silently drop them.
+            """
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+            return
+        }
+
+        // Resolve symlinks first. An atomic write is a write-then-rename, and
+        // renaming over a symlink replaces the *link* with a regular file:
+        // measured, the link stopped pointing anywhere and the real file kept
+        // its old contents, so the edits went somewhere nothing referenced.
+        // Resolving keeps both the atomicity and the link.
+        let destination = URL(fileURLWithPath:
+            (url.path as NSString).resolvingSymlinksInPath)
+
         do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            try data.write(to: destination, options: .atomic)
         } catch {
-            presentError(error, whileOpening: url)
+            presentError(error, whileOpening: destination)
             return
         }
 
@@ -622,6 +654,52 @@ final class DocumentWindowController: NSWindowController {
         sourceEditor?.markSaved()
         updateSaveState()
         startWatching(url)   // safe to watch again: buffer and file agree
+    }
+
+    /// Ask before losing unsaved edits, and report whether it is safe to go on.
+    ///
+    /// Called from the two places edits can be discarded without meaning to:
+    /// closing the window and quitting. `completion(true)` means proceed.
+    func confirmDiscardingEdits(completion: @escaping (Bool) -> Void) {
+        guard canSave, let snapshot else {
+            completion(true)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Save changes to \(snapshot.displayName)?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don't Save")
+        alert.addButton(withTitle: "Cancel")
+        // Destructive, so it does not sit under the return key.
+        alert.buttons[1].hasDestructiveAction = true
+
+        let route: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else {
+                completion(false)
+                return
+            }
+            switch response {
+            case .alertFirstButtonReturn:
+                self.saveDocument(nil)
+                // Only proceed if the save actually finished. A save that hit a
+                // conflict has put its own sheet up and the buffer is still
+                // dirty; closing now would discard the edits the reader just
+                // asked to keep. They resolve that sheet and close again.
+                completion(!self.canSave)
+            case .alertSecondButtonReturn:
+                completion(true)   // Don't Save
+            default:
+                completion(false)  // Cancel
+            }
+        }
+
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: route)
+        } else {
+            route(alert.runModal())
+        }
     }
 
     private func reloadDiscardingEdits() {
@@ -829,6 +907,33 @@ final class DocumentWindowController: NSWindowController {
         } else {
             alert.runModal()
         }
+    }
+}
+
+// MARK: - Closing
+
+extension DocumentWindowController: NSWindowDelegate {
+
+    /// Closing with unsaved edits asks first.
+    ///
+    /// Returns false and closes later: the prompt is a sheet, so the answer
+    /// arrives after this method has already had to return.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard canSave else { return true }
+        confirmDiscardingEdits { [weak sender] proceed in
+            guard proceed, let sender else { return }
+            // markSaved first, or this returns false again and loops.
+            self.discardEdits()
+            sender.close()
+        }
+        return false
+    }
+
+    /// Drop unsaved edits without writing them, for the paths where the reader
+    /// has explicitly chosen to lose them.
+    func discardEdits() {
+        sourceEditor?.markSaved()
+        window?.isDocumentEdited = false
     }
 }
 

@@ -136,6 +136,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Note there is still no Close item in the File menu, so ⌘W does nothing;
     /// the red button is the only way to close. Worth adding, but it is a
     /// separate change from making the close survivable.
+    /// Quitting with unsaved edits asks first, the same as closing.
+    ///
+    /// ⌘Q is the other way to lose a buffer, and it bypasses windowShouldClose
+    /// entirely.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard windowController?.canSave == true else { return .terminateNow }
+        windowController.confirmDiscardingEdits { proceed in
+            if proceed { self.windowController.discardEdits() }
+            NSApp.reply(toApplicationShouldTerminate: proceed)
+        }
+        return .terminateLater
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }

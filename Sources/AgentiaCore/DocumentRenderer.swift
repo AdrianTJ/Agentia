@@ -15,13 +15,18 @@ public struct DocumentSnapshot: Sendable, Equatable {
     public let modifiedOnDisk: Date?
     public let sizeOnDisk: Int?
 
+    /// How the bytes were encoded, so a save reproduces the same file rather
+    /// than a differently-encoded one. See TextFormat.
+    public let format: TextFormat
+
     public init(
         url: URL,
         kind: DocumentKind,
         source: String,
         readAt: Date = Date(),
         modifiedOnDisk: Date? = nil,
-        sizeOnDisk: Int? = nil
+        sizeOnDisk: Int? = nil,
+        format: TextFormat = .utf8
     ) {
         self.url = url
         self.kind = kind
@@ -29,6 +34,7 @@ public struct DocumentSnapshot: Sendable, Equatable {
         self.readAt = readAt
         self.modifiedOnDisk = modifiedOnDisk
         self.sizeOnDisk = sizeOnDisk
+        self.format = format
     }
 
     public var displayName: String { url.lastPathComponent }
@@ -62,17 +68,12 @@ public struct DocumentRenderer: Sendable {
             throw Error.unreadable(url)
         }
 
-        let text: String
-        if let utf8 = String(data: data, encoding: .utf8) {
-            text = utf8
-        } else if let latin1 = String(data: data, encoding: .isoLatin1) {
-            // Latin-1 maps every possible byte, so this branch always succeeds.
-            // The document opens with mojibake rather than not at all, which is
-            // the right trade for a viewer.
-            text = latin1
-        } else {
+        // Decoding and remembering how are the same step: the app can now edit
+        // and write back, so what it took to read the file has to survive.
+        guard let decoded = TextFormat.decode(data) else {
             throw Error.undecodable(url)
         }
+        let text = decoded.text
 
         // Taken after the read, not before: a file rewritten *during* the read
         // must look changed at save time, not identical.
@@ -80,7 +81,8 @@ public struct DocumentRenderer: Sendable {
 
         return DocumentSnapshot(url: url, kind: .forURL(url), source: text,
                                 modifiedOnDisk: fingerprint.modified,
-                                sizeOnDisk: fingerprint.size)
+                                sizeOnDisk: fingerprint.size,
+                                format: decoded.format)
     }
 
     /// The complete page for documents that are served as themselves rather
