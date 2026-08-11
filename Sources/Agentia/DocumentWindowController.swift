@@ -228,6 +228,14 @@ final class DocumentWindowController: NSWindowController {
             // Only costs anything once the reader has opened the sidebar.
             if isSidebarShowing { refreshSidebar() }
 
+            // Clear the outline before the new document loads. Its headings
+            // arrive asynchronously with the page's own "ready", so until then
+            // the pane would still be showing the previous document's — and
+            // because synthetic ids are positional (agentia-h0, h1, …), a click
+            // in that window would not fail, it would silently jump to an
+            // unrelated heading that happens to sit at the same index.
+            sidebarView?.setOutline([])
+
             startWatching(url)
             render()
 

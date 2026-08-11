@@ -204,6 +204,24 @@ async function testShellBehaviour(browser, fragment) {
      `${state.copyButtons}/${state.pres}`);
   ok(state.withIds === state.headings, "every heading has an id for the outline",
      `${state.withIds}/${state.headings}`);
+
+  /* Outline ids must be unique, or the outline cannot jump to them:
+     getElementById returns the first match, so a second heading sharing an id
+     sends the reader to the first one. Raw HTML passes through, so a document
+     can supply its own ids and repeat them. */
+  const ids = await page.evaluate(() => {
+    const doc = document.getElementById("agentia-doc");
+    const hs = [...doc.querySelectorAll("h1,h2,h3,h4,h5,h6")];
+    return {
+      all: hs.map((h) => h.id),
+      // Does each id resolve back to the heading that carries it?
+      resolveToSelf: hs.every((h) => document.getElementById(h.id) === h),
+    };
+  });
+  ok(new Set(ids.all).size === ids.all.length,
+     "heading ids are unique", ids.all.join(", "));
+  ok(ids.resolveToSelf,
+     "every heading id resolves to that same heading");
   ok(state.wrapperKeepsSourcePos,
      "table wrapper carries data-sourcepos so diff still finds it");
 

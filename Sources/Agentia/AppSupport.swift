@@ -496,13 +496,24 @@ final class SidebarView: NSView {
         addSubview(modeControl)
         addSubview(scrollView)
 
+        // Contents keep a fixed width and are anchored to the leading edge,
+        // rather than stretching between both edges.
+        //
+        // The sidebar collapses by clipping — its width constraint goes to 0
+        // while clipsToBounds hides what overflows. Pinning a control to both
+        // edges instead asks it to be -20pt wide when collapsed, which is
+        // unsatisfiable: AppKit logged a conflict on every single launch and
+        // recovered by permanently breaking the trailing constraint, so the
+        // control's right edge no longer tracked the sidebar once expanded.
+        // Fixed width has no such conflict to resolve.
         NSLayoutConstraint.activate([
             modeControl.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            modeControl.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             modeControl.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            modeControl.widthAnchor.constraint(
+                equalToConstant: Self.preferredWidth - 20),
 
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.widthAnchor.constraint(equalToConstant: Self.preferredWidth),
             scrollView.topAnchor.constraint(equalTo: modeControl.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
@@ -632,6 +643,15 @@ extension SidebarView: NSTableViewDataSource, NSTableViewDelegate {
         if mode == .outline {
             guard outline.indices.contains(row) else { return }
             controller?.scrollToHeading(id: outline[row].id)
+
+            // Drop the highlight straight away. An outline row is a jump, not a
+            // selection: leaving it lit claims the reader is "in" that section,
+            // which stops being true the moment they scroll. syncSelection()
+            // already said so but only ran on mode changes and list reloads,
+            // never on the click itself, so the highlight stuck indefinitely.
+            isSyncingSelection = true
+            tableView.deselectAll(nil)
+            isSyncingSelection = false
             return
         }
 
