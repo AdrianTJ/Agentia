@@ -310,13 +310,35 @@ enum CodeHighlighting {
 /// `</main>`.
 enum StructuralTags {
 
-    private static let names: [[UInt8]] = [
-        "main", "/main", "meta", "base", "html", "/html",
-        "head", "/head", "body", "/body", "frameset", "frame",
-    ].map { Array($0.utf8) }
+    private static let names: [[UInt8]] = ([
+        // Structural: a fragment must not be able to close the container it is
+        // embedded in, or navigate the view.
+        "main", "meta", "base", "html", "head", "body", "frameset", "frame",
+        // GFM's own blocklist, repeated here as a backstop. cmark's tagfilter
+        // is supposed to own these, but it ends a tag name on the same
+        // incomplete set of characters this pass used to, so `<style\u{0C}>`
+        // and `<script\u{0C}>` went through it untouched. tagfilter is upstream
+        // and cannot be fixed here; covering the same names locally means one
+        // parser bug is no longer enough. Escaping a tag twice is harmless —
+        // the second pass finds nothing left to escape.
+        "title", "textarea", "style", "xmp", "iframe",
+        "noembed", "noframes", "script", "plaintext",
+    ].flatMap { [$0, "/" + $0] }).map { Array($0.utf8) }
 
     private static func asciiLower(_ c: UInt8) -> UInt8 {
         (c >= UInt8(ascii: "A") && c <= UInt8(ascii: "Z")) ? c + 32 : c
+    }
+
+    /// The characters HTML5 ends a tag name on: `>`, `/`, and the five
+    /// whitespace characters — space, tab, LF, **FF**, CR.
+    static func isTagNameBoundary(_ byte: UInt8) -> Bool {
+        switch byte {
+        case UInt8(ascii: ">"), UInt8(ascii: "/"), UInt8(ascii: " "),
+             0x09, 0x0A, 0x0C, 0x0D:
+            return true
+        default:
+            return false
+        }
     }
 
     /// Does a structural tag start at `html[at]` (which must be `<`)?
@@ -336,13 +358,16 @@ enum StructuralTags {
             let after = at + 1 + name.count
             guard after < html.count else { return true }
 
-            switch html[after] {
-            case UInt8(ascii: ">"), UInt8(ascii: "/"), UInt8(ascii: " "),
-                 UInt8(ascii: "\t"), UInt8(ascii: "\n"), UInt8(ascii: "\r"):
-                return true
-            default:
-                continue
-            }
+            // Every character HTML5 ends a tag name on. The form feed is the
+            // one that is easy to forget and the one that mattered: a document
+            // containing `</main\u{0C}>` was passed through raw by cmark's
+            // tagfilter *and* by this check, and cmark normalised the form feed
+            // away on output — so a real `</main>` reached the page, closed the
+            // shell's container, and everything after it became a sibling of
+            // <body>. That is the full-window-overlay breakout this pass exists
+            // to prevent, and no CSP governs it.
+            if isTagNameBoundary(html[after]) { return true }
+            continue
         }
         return false
     }

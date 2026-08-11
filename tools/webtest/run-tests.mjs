@@ -222,6 +222,49 @@ async function testShellBehaviour(browser, fragment) {
      "heading ids are unique", ids.all.join(", "));
   ok(ids.resolveToSelf,
      "every heading id resolves to that same heading");
+
+  /* A heading may call itself id="agentia-doc" — raw HTML passes through — and
+     getElementById would then resolve to the shell's own container, so the
+     outline row scrolled to the top of the document instead of the heading. */
+  const reserved = await page.evaluate(() => {
+    const doc = document.getElementById("agentia-doc");
+    return [...doc.querySelectorAll("h1,h2,h3,h4,h5,h6")]
+      .some((h) => h.id === "agentia-doc" || h.id === "agentia-bootstrap");
+  });
+  ok(!reserved, "no heading claims an id the shell reserves");
+
+  /* Right-to-left text must read right-to-left. Glyph shaping happens anyway;
+     what was wrong was every line starting flush left and wrapping leftward. */
+  const bidi = await page.evaluate(() => {
+    const p = document.createElement("p");
+    p.textContent = "هذا تقرير عن نتائج التشغيل";
+    document.getElementById("agentia-doc").appendChild(p);
+    // Read the value out, not the live declaration: getComputedStyle returns a
+    // live object that computes to empty once the element is detached, so
+    // reading it after remove() silently yields "".
+    const bidiValue = getComputedStyle(p).unicodeBidi;
+    const box = p.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    const text = range.getBoundingClientRect();
+    p.remove();
+    // With plaintext bidi the paragraph resolves right-to-left, so its text
+    // sits against the right edge of the box rather than the left.
+    return { bidi: bidiValue, gapLeft: text.left - box.left,
+             gapRight: box.right - text.right };
+  });
+  ok(bidi.bidi === "plaintext", "paragraphs resolve direction per paragraph",
+     bidi.bidi);
+  ok(bidi.gapLeft > bidi.gapRight,
+     "an Arabic paragraph is laid out right-to-left",
+     `left gap ${Math.round(bidi.gapLeft)} vs right ${Math.round(bidi.gapRight)}`);
+
+  const codeBidi = await page.evaluate(() => {
+    const pre = document.querySelector("#agentia-doc pre");
+    return pre ? getComputedStyle(pre).direction : null;
+  });
+  ok(codeBidi === "ltr",
+     "code blocks stay left-to-right so indentation survives", `${codeBidi}`);
   ok(state.wrapperKeepsSourcePos,
      "table wrapper carries data-sourcepos so diff still finds it");
 

@@ -99,6 +99,27 @@ body {
   user-select: text;
 }
 
+/* Right-to-left text reads right-to-left.
+   Without this, an Arabic or Hebrew paragraph shaped its glyphs correctly —
+   WebKit's inline bidi algorithm does that regardless — but every line started
+   flush left and wrapped leftward, which reads backwards. `plaintext` asks the
+   engine to decide each paragraph's direction from its own first strong
+   character, so a mostly-English document with one Arabic quotation gets both
+   right, and neither the app nor the author has to declare anything. It is
+   per-paragraph, so a mixed document is not forced into one direction. */
+.doc p, .doc li, .doc blockquote, .doc td, .doc th,
+.doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 {
+  unicode-bidi: plaintext;
+}
+
+/* Code is excluded on purpose: it is read as a sequence of tokens, and letting
+   a leading RTL comment flip an entire block's direction would scramble the
+   indentation the code depends on. */
+.doc pre, .doc pre code {
+  unicode-bidi: normal;
+  direction: ltr;
+}
+
 .doc {
   max-width: var(--measure);
   margin: 0 auto;

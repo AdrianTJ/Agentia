@@ -246,7 +246,11 @@
   function buildOutline() {
     var headings = doc.querySelectorAll("h1, h2, h3, h4, h5, h6");
     var outline = [];
-    var seen = {};
+    /* Seeded with the ids the shell itself owns. A heading is free to call
+       itself id="agentia-doc" — raw HTML passes through — and getElementById
+       would then resolve to the container rather than the heading, so clicking
+       that outline row scrolled to the top of the document instead. */
+    var seen = { "agentia-doc": true, "agentia-bootstrap": true };
     for (var i = 0; i < headings.length; i++) {
       var h = headings[i];
 

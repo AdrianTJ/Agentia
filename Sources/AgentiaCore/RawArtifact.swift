@@ -221,15 +221,16 @@ public enum RawArtifact {
     }
 
     /// A tag name must end at a delimiter, so `<header>` is not `<head>`.
+    ///
+    /// Uses the same HTML5 boundary set as the structural pass, form feed
+    /// included. The consequence here is milder — misreading `<head\u{0C}>` as
+    /// "not a head" only sends the meta to the after-doctype fallback, which is
+    /// safe, and the browser merges the document's own head into the one it
+    /// synthesised. But the two scanners answering the same question
+    /// differently is how a safe fallback quietly becomes an unsafe one.
     private static func isTagBoundary(_ bytes: [UInt8], at index: Int) -> Bool {
         guard index < bytes.count else { return true } // truncated: treat as end
-        switch bytes[index] {
-        case UInt8(ascii: ">"), UInt8(ascii: "/"), UInt8(ascii: " "),
-             UInt8(ascii: "\t"), UInt8(ascii: "\n"), UInt8(ascii: "\r"):
-            return true
-        default:
-            return false
-        }
+        return StructuralTags.isTagNameBoundary(bytes[index])
     }
 
     /// Offset just past the `>` that closes the tag starting at `start`.

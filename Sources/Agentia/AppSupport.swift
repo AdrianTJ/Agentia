@@ -141,6 +141,14 @@ enum Clipboard {
             #"(?i)\s(src|href|poster|srcset|background|data|xlink:href)\s*=\s*"[^"]*""#,
             #"(?i)\s(src|href|poster|srcset|background|data|xlink:href)\s*=\s*'[^']*'"#,
             #"(?i)url\(\s*['"]?[^)]*\)"#,
+            // `@import "…";` fetches without `url()` and without an attribute,
+            // so every pattern above misses it. A security audit copied a
+            // document whose <style> tag carried a form feed in its tag name —
+            // which cmark's tagfilter let through — and the RTF importer really
+            // did fetch the imported sheet, verified against a local listener.
+            // That path has no CSP and no content rule list behind it; this
+            // regex is the only thing standing there.
+            #"(?i)@import\s+[^;]*;?"#,
         ]
 
         var out = html
