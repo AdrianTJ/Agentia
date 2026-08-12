@@ -10,11 +10,20 @@ final class RenderShellTests: XCTestCase {
         struct Pair: Decodable { let input: String; let expected: String }
         struct CSP: Decodable { let markdown: String; let htmlArtifact: String }
 
+        struct ScalePair: Decodable { let input: Double; let expected: String }
+        struct Substitution: Decodable {
+            let template: String
+            let values: [String: String]
+            let expected: String
+        }
+
         let shellScriptSHA256: String
         let shellScriptByteLength: Int
         let contentSecurityPolicy: CSP
         let htmlTextEscaping: [Pair]
         let closingScriptNeutralisation: [Pair]
+        let displayCSS: [ScalePair]
+        let substitution: [Substitution]
     }
 
     private func loadGolden() throws -> Golden {
@@ -25,6 +34,32 @@ final class RenderShellTests: XCTestCase {
             "golden.json is missing — run `node tools/gen-golden.mjs`"
         )
         return try JSONDecoder().decode(Golden.self, from: Data(contentsOf: url))
+    }
+
+    /// The reader's font scale, pinned against the JS implementation.
+    ///
+    /// Both clamp to the same range and format to four decimals, and both carry
+    /// the print reset inside the same declaration. Until now this pairing was
+    /// verified only by reading the two side by side — which is exactly the
+    /// drift the golden harness exists to prevent.
+    func testDisplayCSSMatchesGolden() throws {
+        for pair in try loadGolden().displayCSS {
+            XCTAssertEqual(RenderShell.Display(fontScale: pair.input).css,
+                           pair.expected,
+                           "font scale \(pair.input) drifted from build-page.mjs")
+        }
+    }
+
+    /// Placeholder substitution, likewise. The interesting cases are the ones
+    /// that must NOT happen: a value containing a token is not re-substituted,
+    /// and an unknown token survives as literal text rather than aborting the
+    /// render — a document about Handlebars or Jinja is ordinary agent output.
+    func testSubstitutionMatchesGolden() throws {
+        for case_ in try loadGolden().substitution {
+            XCTAssertEqual(RenderShell.substitute(case_.template, case_.values),
+                           case_.expected,
+                           "substitution drifted for \(case_.template)")
+        }
     }
 
     private func makeShell() throws -> RenderShell {

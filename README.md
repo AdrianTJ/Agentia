@@ -84,8 +84,8 @@ layer.
 
 ```bash
 swift build                           # core, app, and the render CLI
-swift test                            # 177 checks, green in debug and release
-node tools/webtest/run-tests.mjs      # render shell in real Chromium — 181 checks
+swift test                            # 231 checks, green in debug and release
+node tools/webtest/run-tests.mjs      # render shell in real Chromium — 210 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 tools/make-app.sh                     # builds .build/Agentia.app
 ```
@@ -105,9 +105,9 @@ Being honest about this matters more than looking finished.
 | Layer | Status |
 | --- | --- |
 | Parsing core | **Tested.** 51 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
-| Render shell, themes, print CSS | **Tested in a real browser.** 181 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
+| Render shell, themes, print CSS | **Tested in a real browser.** 210 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
 | Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors, plus XCTest |
-| AgentiaCore Swift | **Tested.** 177 XCTest cases, run in both debug and release |
+| AgentiaCore Swift | **Tested.** 231 XCTest cases, run in both debug and release |
 | macOS app layer | **Partly tested.** The navigation guard moved into AgentiaCore so it could be; the rest is AppKit and WebKit wiring, verified by use |
 
 Two harnesses exist to keep implementations that must agree from drifting:
@@ -234,7 +234,25 @@ Recording why, so nobody re-derives it:
 
 Folder mode is built: the sidebar lists the documents beside the one being read, newest
 first, because an agent writes a run — report, summary, dashboard — into one directory and
-moving between those is the navigation this app is for.
+moving between those is the navigation this app is for. The same sidebar switches to the
+document's outline, which `shell.js` has been building on every load since the beginning.
+
+Source view (⌘U) is editable and saves on ⌘S — only on ⌘S, never on a timer, because this
+app opens files in directories an agent is watching and writing on a timer there invites a
+loop. While the buffer has unsaved edits the file watcher stops, so a rerun cannot reload over
+them; a save that finds the file rewritten asks rather than choosing for you; and closing,
+quitting or switching documents with unsaved edits all prompt. A save reproduces the file's
+own encoding, BOM and line endings, and follows symlinks rather than replacing them.
+
+Launching with no document opens a scratchpad (`~/Library/Application Support/Agentia/`)
+with the caret already in it, rather than a page explaining how to open a file. It is an
+ordinary Markdown file, so it persists between launches and Reveal in Finder works on it.
+
+The reader controls two things, in Settings (⌘,) and in the View menu: which of the six
+themes, and text size. Size is a multiplier rather than an absolute, so each theme keeps the
+relationship it designed between body size, measure and typeface — the six range from 13.5px
+to 18.5px at 1.0 and all move together. It is pinned back to 1 for print, since a sheet of
+paper is a fixed size and scaling type there only makes the document longer.
 
 Syntax highlighting is native and lexical — `SyntaxHighlighter` in AgentiaCore, one tokeniser
 driven by a small table per language. The proposal named tree-sitter; that would mean the

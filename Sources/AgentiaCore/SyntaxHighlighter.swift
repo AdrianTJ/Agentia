@@ -29,8 +29,13 @@ import Foundation
 public enum SyntaxHighlighter {
 
     /// What a token is, which is also the CSS class it gets.
+    ///
+    /// Every case here must be emitted by `tokenise` and have a matching
+    /// `.tok-*` rule in base.css. A `punctuation` case was declared and never
+    /// emitted, with no CSS behind it — a class that looks supported and
+    /// silently is not.
     public enum Token: String, Sendable, CaseIterable {
-        case keyword, string, comment, number, type, function, punctuation
+        case keyword, string, comment, number, type, function
 
         var cssClass: String { "tok-" + rawValue }
     }

@@ -246,9 +246,24 @@
   function buildOutline() {
     var headings = doc.querySelectorAll("h1, h2, h3, h4, h5, h6");
     var outline = [];
+    /* Seeded with the ids the shell itself owns. A heading is free to call
+       itself id="agentia-doc" — raw HTML passes through — and getElementById
+       would then resolve to the container rather than the heading, so clicking
+       that outline row scrolled to the top of the document instead. */
+    var seen = { "agentia-doc": true, "agentia-bootstrap": true };
     for (var i = 0; i < headings.length; i++) {
       var h = headings[i];
-      if (!h.id) h.id = "agentia-h" + i;
+
+      /* An id has to identify exactly one heading, or the outline cannot jump
+         to it: getElementById returns the first match, so a second heading
+         sharing an id sends the reader to the first one instead. Raw HTML
+         passes through, so a document can supply its own ids and repeat them.
+         The first occurrence keeps the id — that is what in-document anchors
+         already resolve to — and later duplicates are renamed. */
+      if (!h.id || Object.prototype.hasOwnProperty.call(seen, h.id)) {
+        h.id = "agentia-h" + i;
+      }
+      seen[h.id] = true;
       outline.push({
         id: h.id,
         level: parseInt(h.tagName.slice(1), 10),

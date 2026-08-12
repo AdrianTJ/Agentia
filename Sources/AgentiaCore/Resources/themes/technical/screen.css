@@ -18,4 +18,4 @@ html[data-appearance="dark"] {
 .doc h1, .doc h2, .doc h3 { letter-spacing: -.02em; font-weight: 700; }
 .doc h2::before { content: "## "; color: var(--fg-faint); font-weight: 400; }
 .doc h3::before { content: "### "; color: var(--fg-faint); font-weight: 400; }
-.doc pre { font-size: 12.5px; }
+.doc pre { font-size: 0.806em; }  /* was 12.5px; em so it scales with the reader's text size */

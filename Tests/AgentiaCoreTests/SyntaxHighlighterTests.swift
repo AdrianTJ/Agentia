@@ -45,6 +45,29 @@ final class SyntaxHighlighterTests: XCTestCase {
         roundTrip("var s = \"&lt;div&gt;\" + \"&amp;\"", "javascript")
     }
 
+    /// Every token case must actually be produced and actually be styled.
+    /// A case with no emitter and no CSS is a class that looks supported and
+    /// silently is not — which is how `punctuation` survived until a review
+    /// found it.
+    func testEveryTokenCaseIsEmittedAndStyled() throws {
+        let sample = """
+        // comment
+        func name(x) { return "s" + 42 }
+        let t: String = Thing()
+        """
+        let html = SyntaxHighlighter.highlight(sample, language: "swift") ?? ""
+        let css = try String(
+            contentsOf: XCTUnwrap(ResourceBundle.shellDirectory)
+                .appendingPathComponent("base.css"), encoding: .utf8)
+
+        for token in SyntaxHighlighter.Token.allCases {
+            XCTAssertTrue(html.contains("class=\"\(token.cssClass)\""),
+                          "\(token.rawValue) is never emitted")
+            XCTAssertTrue(css.contains(".\(token.cssClass)"),
+                          "\(token.rawValue) has no CSS rule")
+        }
+    }
+
     func testUnknownLanguageIsLeftAlone() {
         XCTAssertNil(SyntaxHighlighter.highlight("+[->+<]", language: "brainfuck"))
         XCTAssertNil(SyntaxHighlighter.highlight("x", language: ""))

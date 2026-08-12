@@ -87,6 +87,7 @@ async function main() {
     await testDarkAppearance(browser, fragment);
     await testHTMLArtifactProfile(browser);
     await testDocumentCannotNavigate(browser);
+    await testTextSize(browser, fragment, themes);
   } finally {
     await browser.close();
   }
@@ -203,6 +204,67 @@ async function testShellBehaviour(browser, fragment) {
      `${state.copyButtons}/${state.pres}`);
   ok(state.withIds === state.headings, "every heading has an id for the outline",
      `${state.withIds}/${state.headings}`);
+
+  /* Outline ids must be unique, or the outline cannot jump to them:
+     getElementById returns the first match, so a second heading sharing an id
+     sends the reader to the first one. Raw HTML passes through, so a document
+     can supply its own ids and repeat them. */
+  const ids = await page.evaluate(() => {
+    const doc = document.getElementById("agentia-doc");
+    const hs = [...doc.querySelectorAll("h1,h2,h3,h4,h5,h6")];
+    return {
+      all: hs.map((h) => h.id),
+      // Does each id resolve back to the heading that carries it?
+      resolveToSelf: hs.every((h) => document.getElementById(h.id) === h),
+    };
+  });
+  ok(new Set(ids.all).size === ids.all.length,
+     "heading ids are unique", ids.all.join(", "));
+  ok(ids.resolveToSelf,
+     "every heading id resolves to that same heading");
+
+  /* A heading may call itself id="agentia-doc" — raw HTML passes through — and
+     getElementById would then resolve to the shell's own container, so the
+     outline row scrolled to the top of the document instead of the heading. */
+  const reserved = await page.evaluate(() => {
+    const doc = document.getElementById("agentia-doc");
+    return [...doc.querySelectorAll("h1,h2,h3,h4,h5,h6")]
+      .some((h) => h.id === "agentia-doc" || h.id === "agentia-bootstrap");
+  });
+  ok(!reserved, "no heading claims an id the shell reserves");
+
+  /* Right-to-left text must read right-to-left. Glyph shaping happens anyway;
+     what was wrong was every line starting flush left and wrapping leftward. */
+  const bidi = await page.evaluate(() => {
+    const p = document.createElement("p");
+    p.textContent = "هذا تقرير عن نتائج التشغيل";
+    document.getElementById("agentia-doc").appendChild(p);
+    // Read the value out, not the live declaration: getComputedStyle returns a
+    // live object that computes to empty once the element is detached, so
+    // reading it after remove() silently yields "".
+    const bidiValue = getComputedStyle(p).unicodeBidi;
+    const box = p.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    const text = range.getBoundingClientRect();
+    p.remove();
+    // With plaintext bidi the paragraph resolves right-to-left, so its text
+    // sits against the right edge of the box rather than the left.
+    return { bidi: bidiValue, gapLeft: text.left - box.left,
+             gapRight: box.right - text.right };
+  });
+  ok(bidi.bidi === "plaintext", "paragraphs resolve direction per paragraph",
+     bidi.bidi);
+  ok(bidi.gapLeft > bidi.gapRight,
+     "an Arabic paragraph is laid out right-to-left",
+     `left gap ${Math.round(bidi.gapLeft)} vs right ${Math.round(bidi.gapRight)}`);
+
+  const codeBidi = await page.evaluate(() => {
+    const pre = document.querySelector("#agentia-doc pre");
+    return pre ? getComputedStyle(pre).direction : null;
+  });
+  ok(codeBidi === "ltr",
+     "code blocks stay left-to-right so indentation survives", `${codeBidi}`);
   ok(state.wrapperKeepsSourcePos,
      "table wrapper carries data-sourcepos so diff still finds it");
 
@@ -852,3 +914,72 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+/* ---------- 9. reader text size ---------- */
+
+async function testTextSize(browser, fragment, themes) {
+  console.log("text size");
+
+  const read = async (themeId, fontScale, media) => {
+    const page = await browser.newPage();
+    await page.setContent(
+      buildPage({ content: fragment, themeId, title: "Size", fontScale }),
+      { waitUntil: "load" }
+    );
+    if (media) await page.emulateMedia({ media });
+    const out = await page.evaluate(() => {
+      const pre = document.querySelector(".doc pre");
+      const code = document.querySelector(".doc p code") || document.querySelector(".doc code");
+      return {
+        body: parseFloat(getComputedStyle(document.body).fontSize),
+        pre: pre ? parseFloat(getComputedStyle(pre).fontSize) : 0,
+        inline: code ? parseFloat(getComputedStyle(code).fontSize) : 0,
+        overflow: document.documentElement.scrollWidth
+          - document.documentElement.clientWidth,
+      };
+    });
+    await page.close();
+    return out;
+  };
+
+  // Every theme keeps its own size and all of them move together. A theme that
+  // does not scale is a theme the preference silently does not apply to.
+  for (const theme of themes) {
+    const one = await read(theme.id, 1);
+    const two = await read(theme.id, 2);
+
+    ok(Math.abs(two.body / one.body - 2) < 0.02,
+       `${theme.id}: body text scales`, `${one.body} -> ${two.body}`);
+
+    // Code blocks used to be a hardcoded px and stayed put while the prose
+    // around them doubled — the worst case for a reader who enlarged the text
+    // precisely to read code more comfortably.
+    ok(Math.abs(two.pre / one.pre - 2) < 0.02,
+       `${theme.id}: fenced code scales with the body`,
+       `${one.pre} -> ${two.pre}`);
+    ok(Math.abs(two.inline / one.inline - 2) < 0.02,
+       `${theme.id}: inline code scales with the body`,
+       `${one.inline} -> ${two.inline}`);
+
+    ok(two.overflow <= 1,
+       `${theme.id}: no horizontal overflow at 2x`, `${two.overflow}px`);
+  }
+
+  // Themes must not all collapse to one size — that would mean the scale had
+  // replaced the theme's choice rather than multiplied it.
+  const sizes = [];
+  for (const theme of themes) sizes.push((await read(theme.id, 1.5)).body);
+  ok(new Set(sizes).size > 1,
+     "themes keep distinct sizes under a scale", sizes.join(", "));
+
+  // Paper is a fixed size: scaling there lengthens the document rather than
+  // aiding reading.
+  const printed = await read("manuscript", 2, "print");
+  const printedPlain = await read("manuscript", 1, "print");
+  ok(Math.abs(printed.body - printedPlain.body) < 0.5,
+     "print ignores the reader's text size",
+     `${printedPlain.body} vs ${printed.body}`);
+
+  ok((await read("manuscript", 1)).body !== printed.body,
+     "and the preference still applies on screen");
+}

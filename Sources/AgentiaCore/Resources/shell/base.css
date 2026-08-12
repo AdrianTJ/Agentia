@@ -86,13 +86,38 @@ html, body {
 
 body {
   font-family: var(--font-body);
-  font-size: var(--size-body);
+  /* --agentia-scale is the reader's font-size preference, injected per render.
+     Multiplying whatever the theme chose keeps every theme's own proportions
+     rather than flattening them all to one absolute size. Defaults to 1, so a
+     page rendered without the preference is unchanged. */
+  font-size: calc(var(--size-body) * var(--agentia-scale, 1));
   line-height: var(--leading);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   /* The reader is a document, not an app surface: let the user select text. */
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* Right-to-left text reads right-to-left.
+   Without this, an Arabic or Hebrew paragraph shaped its glyphs correctly —
+   WebKit's inline bidi algorithm does that regardless — but every line started
+   flush left and wrapped leftward, which reads backwards. `plaintext` asks the
+   engine to decide each paragraph's direction from its own first strong
+   character, so a mostly-English document with one Arabic quotation gets both
+   right, and neither the app nor the author has to declare anything. It is
+   per-paragraph, so a mixed document is not forced into one direction. */
+.doc p, .doc li, .doc blockquote, .doc td, .doc th,
+.doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 {
+  unicode-bidi: plaintext;
+}
+
+/* Code is excluded on purpose: it is read as a sequence of tokens, and letting
+   a leading RTL comment flip an entire block's direction would scramble the
+   indentation the code depends on. */
+.doc pre, .doc pre code {
+  unicode-bidi: normal;
+  direction: ltr;
 }
 
 .doc {
@@ -165,7 +190,14 @@ body {
 
 .doc pre {
   font-family: var(--font-mono);
-  font-size: 13px;
+  /* Relative to the body, so it moves with the reader's text-size preference.
+     This was a hardcoded 13px, which meant a reader who enlarged the text got
+     no relief in exactly the documents that need it most: agent output is
+     prose wrapped around code, and a heading at 2x above a code block still at
+     13px is a jarring mismatch rather than a larger document. Inline `code`
+     was already em-relative and scaled correctly — only multiline blocks were
+     pinned. */
+  font-size: 0.79em;
   line-height: 1.6;
   background: var(--bg-sunken);
   border: 1px solid var(--rule-soft);
@@ -326,6 +358,12 @@ body {
    are the ones that must hold regardless of theme.
    ===================================================================== */
 @media print {
+  /* The print reset for --agentia-scale is NOT here: it is emitted alongside
+     the scale itself in RenderShell.Display.css. A reset in this file loses to
+     the preference, which the shell writes into a later <style> block at the
+     same specificity. Putting both in the same declaration removes the
+     ordering question entirely. */
+
   html, body {
     background: #fff;
     color: #000;

@@ -225,6 +225,43 @@ final class MarkdownParsingTests: XCTestCase {
         XCTAssertFalse(html.contains("<FRAME"))
     }
 
+    /// U+000C ends a tag name in HTML5, and neither this pass nor cmark's
+    /// tagfilter used to treat it as one.
+    ///
+    /// Found by a security audit. `</main\u{0C}>` went through both untouched
+    /// and cmark normalised the form feed away on output, so a real `</main>`
+    /// reached the page, closed the shell's container, and everything after it
+    /// became a sibling of <body> — the full-window-overlay breakout, which no
+    /// CSP governs.
+    func testFormFeedDoesNotSmuggleAStructuralTag() throws {
+        for whitespace in ["\u{0C}", "\u{09}", "\u{0A}", "\u{0D}", " "] {
+            let html = try render("</main\(whitespace)>\n")
+            XCTAssertFalse(html.contains("</main"),
+                           "a tag name ending in U+\(String(format: "%04X", whitespace.unicodeScalars.first!.value)) escaped neutralisation")
+            XCTAssertTrue(html.contains("&lt;/main"))
+        }
+    }
+
+    /// cmark's tagfilter ends a tag name on the same incomplete set, and it is
+    /// upstream. Covering its blocklist locally means one parser bug is no
+    /// longer enough to put a live <style> or <script> element in the page.
+    func testFormFeedDoesNotSmuggleABlocklistedTag() throws {
+        for tag in ["style", "script", "iframe", "textarea", "xmp"] {
+            let html = try render("<\(tag)\u{0C}>payload</\(tag)\u{0C}>\n")
+            XCTAssertFalse(html.contains("<\(tag)"),
+                           "\(tag) reached the page as a real element")
+            XCTAssertTrue(html.contains("&lt;\(tag)"))
+        }
+    }
+
+    /// Ordinary tags must still pass through — this pass escapes a named set,
+    /// not everything that follows a `<`.
+    func testFormFeedFixDoesNotEscapeOrdinaryTags() throws {
+        let html = try render("<div>kept</div> and <mainstay>too</mainstay>\n")
+        XCTAssertTrue(html.contains("<div>"))
+        XCTAssertTrue(html.contains("<mainstay>"))
+    }
+
     /// Opt-out must work, for callers embedding into a full document.
     func testNeutralisationCanBeDisabled() throws {
         XCTAssertTrue(try render("</main>\n", rawHTMLOnly).contains("</main>"))

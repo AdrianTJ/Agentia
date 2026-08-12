@@ -1,5 +1,20 @@
 # Handoff
 
+> **Historical — superseded. Read `README.md` for the current state.**
+>
+> This was written for one moment: the Swift had never been compiled, and the app had never
+> run. Both are long since false. Everything in §4 "What to do, in order" is done — the C is
+> gone, HTML artifacts render as authored, the sidebar and find bar are built, the diff view
+> explains itself, send-to-app is Open With plus the share sheet, and syntax highlighting is
+> native (lexical rather than tree-sitter; the reasoning is in `SyntaxHighlighter`). Since
+> then it has also gained an icon, a Settings window with themes and text size, and a
+> document outline.
+>
+> It is kept because §3 (the invariants) and §5 (the traps) are still true and still earn
+> their keep, and because the rest records *why* the code was shaped the way it was — which
+> is the part that would be expensive to rediscover. Treat the status claims as a snapshot of
+> the past, not a description of the app.
+
 You are picking up Agentia on a Mac. The previous agent built it on Linux with **no Swift
 toolchain**, so a large part of your value is doing what that environment could not.
 

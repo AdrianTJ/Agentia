@@ -64,6 +64,60 @@ public struct RenderShell: Sendable {
         case light, dark
     }
 
+    /// The reader's display preferences, applied over the theme.
+    ///
+    /// Deliberately a multiplier rather than an absolute size: each theme picks
+    /// a body size that suits its measure and typeface, and pinning everything
+    /// to "16px" would flatten those choices into one. Scaling preserves the
+    /// relationship the theme designed.
+    public struct Display: Sendable, Equatable {
+        public var fontScale: Double
+
+        public init(fontScale: Double = 1.0) {
+            self.fontScale = fontScale
+        }
+
+        public static let `default` = Display()
+
+        /// Bounds the scale to something a reader can use.
+        ///
+        /// Not about the measure: `--measure` is in `ch`, so the column grows
+        /// with the type and the line length stays constant at every scale —
+        /// an earlier version of this comment claimed otherwise and was wrong.
+        /// The real limits are legibility at the bottom (compact and terminal
+        /// reach 8-10px at 0.7, which is the floor of comfortable reading) and
+        /// the window at the top, where past 2x a wide table needs more width
+        /// than a laptop display has.
+        ///
+        /// Clamped here rather than at the UI so no caller can render an
+        /// unusable page.
+        public static let range: ClosedRange<Double> = 0.7...2.0
+
+        /// The CSS this becomes. Empty when nothing is customised, so an
+        /// unmodified render carries no extra bytes.
+        ///
+        /// The print reset ships with the scale rather than living in
+        /// `base.css`, and that placement is load-bearing: this block is
+        /// written into a later `<style>` than base.css at the same
+        /// specificity, so a reset there loses to the preference here. Keeping
+        /// both in one declaration removes the ordering question — measured,
+        /// after a reset in base.css silently failed to take effect.
+        ///
+        /// Why reset at all: a sheet of paper is a fixed size, so enlarging
+        /// the type does not make it easier to read, it only makes the
+        /// document longer — the torture fixture went from 3 pages to 8 at 2x
+        /// with identical content. Someone who sized the text for their screen
+        /// has not asked for a PDF two and a half times as long.
+        public var css: String {
+            let scale = min(max(fontScale, Self.range.lowerBound), Self.range.upperBound)
+            guard scale != 1.0 else { return "" }
+            // Four decimal places: enough for every step the UI offers, and it
+            // cannot emit an exponent, which CSS would not parse.
+            return String(format: ":root{--agentia-scale:%.4f}", scale)
+                + "@media print{:root{--agentia-scale:1}}"
+        }
+    }
+
     private let shellDirectory: URL
 
     public init(shellDirectory: URL) {
@@ -184,7 +238,8 @@ public struct RenderShell: Sendable {
         title: String,
         appearance: Appearance = .light,
         profile: RenderProfile = .markdown,
-        bootstrap: Bootstrap = .empty
+        bootstrap: Bootstrap = .empty,
+        display: Display = .default
     ) throws -> String {
         let template = try read("shell.html")
         let baseCSS = try read("base.css")
@@ -200,6 +255,7 @@ public struct RenderShell: Sendable {
             "TITLE": Self.escapeForHTMLText(title),
             "BASE_CSS": baseCSS,
             "THEME_CSS": theme.css,
+            "USER_CSS": display.css,
             "BOOTSTRAP_JSON": Self.bootstrapJSON(bootstrap),
             "CONTENT": content,
             "SHELL_JS": js,
@@ -272,7 +328,8 @@ public struct RenderShell: Sendable {
 
     static let templateTokens = [
         "{{APPEARANCE}}", "{{CSP}}", "{{TITLE}}", "{{BASE_CSS}}",
-        "{{THEME_CSS}}", "{{BOOTSTRAP_JSON}}", "{{CONTENT}}", "{{SHELL_JS}}",
+        "{{THEME_CSS}}", "{{USER_CSS}}", "{{BOOTSTRAP_JSON}}", "{{CONTENT}}",
+        "{{SHELL_JS}}",
     ]
 
     private func read(_ name: String) throws -> String {

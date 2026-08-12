@@ -38,12 +38,16 @@ final class DocumentWindowController: NSWindowController {
     private var sidebarView: SidebarView?
     /// Collapsed to zero rather than hidden, so showing it is one animation.
     private var sidebarWidth: NSLayoutConstraint?
+    private var sourceEditor: SourceEditor?
     private var findBar: FindBar?
     private var findBarHeight: NSLayoutConstraint?
     /// Bumped on every search so a stale async result cannot overwrite the
     /// status of a newer one.
     private var findGeneration = 0
     private var toolbarController: DocumentToolbar?
+    /// Built the first time Settings is opened, then kept — it is cheap to hold
+    /// and reopening should not lose the window's position.
+    private var settingsController: SettingsWindowController?
 
     init(webView: HardenedWebView) {
         self.webView = webView
@@ -101,6 +105,7 @@ final class DocumentWindowController: NSWindowController {
         // and unlisted, so it is left alone.)
         window.isRestorable = false
 
+        window.delegate = self
         window.contentView = makeContentView()
 
         let toolbar = DocumentToolbar(target: self)
@@ -140,11 +145,19 @@ final class DocumentWindowController: NSWindowController {
         find.translatesAutoresizingMaskIntoConstraints = false
         findBar = find
 
+        // Sits exactly where the web view does and is shown instead of it in
+        // source mode, so nothing has to move when the reader toggles.
+        let editor = SourceEditor(onDirty: { [weak self] in self?.bufferBecameDirty() })
+        editor.translatesAutoresizingMaskIntoConstraints = false
+        editor.isHidden = true
+        sourceEditor = editor
+
         webView.translatesAutoresizingMaskIntoConstraints = false
 
         container.addSubview(sidebar)
         container.addSubview(find)
         container.addSubview(webView)
+        container.addSubview(editor)
 
         let findHeight = find.heightAnchor.constraint(equalToConstant: 0)
         findBarHeight = findHeight
@@ -180,9 +193,37 @@ final class DocumentWindowController: NSWindowController {
             webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             webView.topAnchor.constraint(equalTo: find.bottomAnchor),
             webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
+            editor.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            editor.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            editor.topAnchor.constraint(equalTo: find.bottomAnchor),
+            editor.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
 
         return container
+    }
+
+    /// Open the scratch document and put the caret in it.
+    ///
+    /// What launching with no file does now. The old behaviour was a page
+    /// reading "Open a Markdown or HTML file to begin", which is accurate and
+    /// does nothing for someone who opened the app to write something down.
+    ///
+    /// Falls back to that message only if the scratch file cannot be created —
+    /// a full disk, or a sandbox that denies Application Support.
+    @objc func openScratchDocument() {
+        guard let url = ScratchDocument.url(),
+              let ready = try? ScratchDocument.ensure(at: url)
+        else {
+            showEmptyState()
+            return
+        }
+
+        open(ready)
+        // Straight into the editor: the point is to type, and a blank rendered
+        // page would just say the document is empty.
+        mode = .source
+        render()
     }
 
     func showEmptyState() {
@@ -202,6 +243,27 @@ final class DocumentWindowController: NSWindowController {
     // MARK: - Opening
 
     func open(_ url: URL) {
+        // Unsaved edits belong to the document that is open now, so switching
+        // has to settle them first.
+        //
+        // Without this the editor kept the old document's text while `snapshot`
+        // became the new one — and a later ⌘S wrote the *old* file's edits into
+        // the *new* file's path, destroying a third document that was never
+        // touched. The conflict check could not catch it either: it compares
+        // the new file against its own fingerprint, which nothing had changed.
+        //
+        // Guarded here rather than at the call sites, because there are three —
+        // the sidebar, ⌘O, and a Finder open while already running — and a
+        // fourth would have inherited the bug.
+        guard !canSave || url == snapshot?.url else {
+            confirmDiscardingEdits { [weak self] proceed in
+                guard proceed else { return }
+                self?.discardEdits()
+                self?.open(url)
+            }
+            return
+        }
+
         do {
             let snapshot = try DocumentRenderer.read(contentsOf: url)
 
@@ -224,6 +286,14 @@ final class DocumentWindowController: NSWindowController {
             }
             // Only costs anything once the reader has opened the sidebar.
             if isSidebarShowing { refreshSidebar() }
+
+            // Clear the outline before the new document loads. Its headings
+            // arrive asynchronously with the page's own "ready", so until then
+            // the pane would still be showing the previous document's — and
+            // because synthetic ids are positional (agentia-h0, h1, …), a click
+            // in that window would not fail, it would silently jump to an
+            // unrelated heading that happens to sit at the same index.
+            sidebarView?.setOutline([])
 
             startWatching(url)
             render()
@@ -308,13 +378,20 @@ final class DocumentWindowController: NSWindowController {
 
         switch mode {
         case .source:
-            // Source view is always shown as inert text, whatever the file is.
-            content = "<pre><code>"
-                + escapeHTML(snapshot.source)
-                + "</code></pre>"
-            profile = .markdown
+            // Source mode is a real editor, not a rendered page — see
+            // SourceEditor. Loading only when the buffer is clean is what stops
+            // an unrelated re-render (a theme change, a text-size step) from
+            // throwing away what the reader has typed.
+            if let sourceEditor {
+                if !sourceEditor.isDirty { sourceEditor.load(snapshot.source) }
+                sourceEditor.applyFontScale(Preferences.fontScale)
+                showEditor(true)
+            }
+            return
 
         case .rendered, .diff:
+            showEditor(false)
+
             // An HTML artifact is served as its own document: no shell, no
             // theme, no injected script. Nothing below applies to it, so this
             // returns rather than falling through — and it asks AgentiaCore
@@ -354,7 +431,8 @@ final class DocumentWindowController: NSWindowController {
             title: snapshot.displayName,
             appearance: Preferences.appearance,
             profile: profile,
-            bootstrap: bootstrap
+            bootstrap: bootstrap,
+            display: RenderShell.Display(fontScale: Preferences.fontScale)
         ) else { return }
 
         webView.load(page: page, assetRoot: snapshot.assetRoot, profile: profile)
@@ -466,6 +544,14 @@ final class DocumentWindowController: NSWindowController {
 
     @objc func exportPDF(_ sender: Any?) {
         guard let snapshot, let theme else { return }
+
+        // A PDF is always of the rendered document — that is what the themes
+        // and the print CSS are for. Exporting from source mode used to print
+        // the hidden web view, which could still be showing the pre-edit page.
+        if mode != .rendered {
+            mode = .rendered
+            render()
+        }
         let settings = PDFExporter.Settings.from(theme: theme,
                                                  documentName: snapshot.displayName)
         let suggested = snapshot.url.deletingPathExtension().lastPathComponent + ".pdf"
@@ -481,6 +567,263 @@ final class DocumentWindowController: NSWindowController {
 
     /// The document on disk, for the routes that hand a file to another app.
     var documentURL: URL? { snapshot?.url }
+
+    private func showEditor(_ editing: Bool) {
+        sourceEditor?.isHidden = !editing
+        webView.isHidden = editing
+        if editing { sourceEditor?.focus() }
+    }
+
+    /// The reader has typed something. Stop watching the file.
+    ///
+    /// The watcher exists so a rerun by an agent appears immediately, and that
+    /// is exactly wrong once there are unsaved edits: reloading would discard
+    /// them with no way back. Watching resumes after a save, when the buffer
+    /// and the file agree again.
+    private func bufferBecameDirty() {
+        watcher?.stop()
+        watcher = nil
+        updateSaveState()
+    }
+
+    /// Whether ⌘S has anything to do.
+    var canSave: Bool { sourceEditor?.isDirty == true && snapshot != nil }
+
+    private func updateSaveState() {
+        // The dot in the close button, the way every document app shows it.
+        window?.isDocumentEdited = sourceEditor?.isDirty == true
+    }
+
+    @objc func saveDocument(_ sender: Any?) {
+        guard let snapshot, let sourceEditor, sourceEditor.isDirty else { return }
+
+        // Has anything rewritten the file since it was read? The decision lives
+        // in AgentiaCore so it can be tested; this is only the wiring.
+        let now = DocumentSaving.currentBytes(of: snapshot.url)
+        let verdict = DocumentSaving.verdict(
+            recordedBytes: snapshot.bytesOnDisk,
+            currentBytes: now.bytes,
+            fileExists: now.exists
+        )
+
+        switch verdict {
+        case .safe:
+            write(sourceEditor.text, to: snapshot.url)
+
+        case .changedOnDisk:
+            // The case this app makes likely: an agent rewrote the report while
+            // it was open. Neither side is obviously right, so ask — and make
+            // the destructive option the one that has to be chosen.
+            confirm(
+                title: "This file changed on disk",
+                message: """
+                \(snapshot.displayName) was rewritten after you opened it — \
+                probably by whatever produced it.
+
+                Saving replaces those changes with what is in the editor.
+                """,
+                destructive: "Overwrite",
+                alternative: "Reload and Lose My Edits"
+            ) { [weak self] choice in
+                guard let self else { return }
+                switch choice {
+                case .destructive: self.write(sourceEditor.text, to: snapshot.url)
+                case .alternative: self.reloadDiscardingEdits()
+                case .cancel: break
+                }
+            }
+
+        case .missing:
+            confirm(
+                title: "This file no longer exists",
+                message: """
+                \(snapshot.displayName) was moved or deleted. Saving writes it \
+                back to where it was.
+                """,
+                destructive: "Save Anyway",
+                alternative: nil
+            ) { [weak self] choice in
+                if choice == .destructive {
+                    self?.write(sourceEditor.text, to: snapshot.url)
+                }
+            }
+        }
+    }
+
+    private func write(_ text: String, to url: URL) {
+        // Named `current` so it does not shadow the `snapshot` property, which
+        // the re-read below reassigns.
+        guard let current = snapshot else { return }
+
+        // Written back in the encoding it was read in, BOM included. Saving an
+        // untouched Latin-1 file as UTF-8, or dropping a BOM, rewrites a file
+        // the reader never edited — and the text on screen looks identical
+        // either way, so nothing would tell them.
+        guard let data = current.format.encode(text) else {
+            let alert = NSAlert()
+            alert.messageText = "Can't save as \(current.format.displayName)"
+            alert.informativeText = """
+            This document contains characters that \(current.format.displayName) \
+            cannot represent — most likely something typed or pasted just now.
+
+            Saving would silently drop them.
+            """
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+            return
+        }
+
+        // Resolve symlinks first. An atomic write is a write-then-rename, and
+        // renaming over a symlink replaces the *link* with a regular file:
+        // measured, the link stopped pointing anywhere and the real file kept
+        // its old contents, so the edits went somewhere nothing referenced.
+        // Resolving keeps both the atomicity and the link.
+        let destination = URL(fileURLWithPath:
+            (url.path as NSString).resolvingSymlinksInPath)
+
+        // An atomic write is a write-then-rename, which needs permission on the
+        // *directory*, not the file — so a file the reader deliberately marked
+        // read-only saved anyway, silently. Checked explicitly rather than left
+        // to fail, because it never fails.
+        if FileManager.default.fileExists(atPath: destination.path),
+           !FileManager.default.isWritableFile(atPath: destination.path) {
+            confirm(
+                title: "This file is marked read-only",
+                message: """
+                \(destination.lastPathComponent) has its permissions set to \
+                read-only. Saving changes it anyway.
+                """,
+                destructive: "Save Anyway",
+                alternative: nil
+            ) { [weak self] choice in
+                guard choice == .destructive else { return }
+                self?.performWrite(data, to: destination, url: url)
+            }
+            return
+        }
+
+        performWrite(data, to: destination, url: url)
+    }
+
+    private func performWrite(_ data: Data, to destination: URL, url: URL) {
+        do {
+            try data.write(to: destination, options: .atomic)
+        } catch {
+            presentError(error, whileOpening: destination)
+            return
+        }
+
+        // Re-read rather than patching the snapshot by hand: this picks up the
+        // new modification date and size, so the next save compares against
+        // what was actually written.
+        if let fresh = try? DocumentRenderer.read(contentsOf: url) {
+            // The diff baseline is cleared, not advanced. Diff means "what
+            // changed since the last run", and the reader's own edit is not
+            // that — arming it here showed them their own typing as though an
+            // agent had rewritten the file, with a timestamp to match. It comes
+            // back on the next external write, which is what it is for.
+            previousSource = nil
+            baselineTakenAt = nil
+            if mode == .diff { mode = .rendered }
+            snapshot = fresh
+        }
+
+        sourceEditor?.markSaved()
+        updateSaveState()
+        startWatching(url)   // safe to watch again: buffer and file agree
+
+        // Re-render, or the rendered view keeps showing the pre-edit document
+        // after a save made from it. Skipped in source mode: the editor already
+        // holds exactly what was written, and reloading it there would throw
+        // away the caret and scroll position for no visible gain.
+        if mode != .source { render() }
+    }
+
+    /// Ask before losing unsaved edits, and report whether it is safe to go on.
+    ///
+    /// Called from the two places edits can be discarded without meaning to:
+    /// closing the window and quitting. `completion(true)` means proceed.
+    func confirmDiscardingEdits(completion: @escaping (Bool) -> Void) {
+        guard canSave, let snapshot else {
+            completion(true)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Save changes to \(snapshot.displayName)?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don't Save")
+        alert.addButton(withTitle: "Cancel")
+        // Destructive, so it does not sit under the return key.
+        alert.buttons[1].hasDestructiveAction = true
+
+        let route: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else {
+                completion(false)
+                return
+            }
+            switch response {
+            case .alertFirstButtonReturn:
+                self.saveDocument(nil)
+                // Only proceed if the save actually finished. A save that hit a
+                // conflict has put its own sheet up and the buffer is still
+                // dirty; closing now would discard the edits the reader just
+                // asked to keep. They resolve that sheet and close again.
+                completion(!self.canSave)
+            case .alertSecondButtonReturn:
+                completion(true)   // Don't Save
+            default:
+                completion(false)  // Cancel
+            }
+        }
+
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: route)
+        } else {
+            route(alert.runModal())
+        }
+    }
+
+    private func reloadDiscardingEdits() {
+        guard let url = snapshot?.url else { return }
+        sourceEditor?.markSaved()
+        updateSaveState()
+        open(url)
+    }
+
+    private enum ConfirmChoice { case destructive, alternative, cancel }
+
+    private func confirm(
+        title: String,
+        message: String,
+        destructive: String,
+        alternative: String?,
+        then handle: @escaping (ConfirmChoice) -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: destructive)
+        if let alternative { alert.addButton(withTitle: alternative) }
+        alert.addButton(withTitle: "Cancel")
+
+        let route: (NSApplication.ModalResponse) -> Void = { response in
+            switch response {
+            case .alertFirstButtonReturn: handle(.destructive)
+            case .alertSecondButtonReturn: handle(alternative == nil ? .cancel : .alternative)
+            default: handle(.cancel)
+            }
+        }
+
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: route)
+        } else {
+            route(alert.runModal())
+        }
+    }
 
     /// The system share sheet: Mail, Messages, AirDrop, Notes and every
     /// installed share extension, without Agentia knowing about any of them.
@@ -527,6 +870,13 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func runFind(_ query: String, forward: Bool) {
+        // Source mode is a text view, not the web view — searching the latter
+        // would search something hidden, and possibly stale.
+        if mode == .source, let sourceEditor {
+            findBar?.report(found: sourceEditor.find(query, forward: forward))
+            return
+        }
+
         // Clearing the field must clear the highlight, not just the status.
         // Otherwise backspacing a matched query to empty leaves the document
         // speckled with matches until the bar is dismissed — the same "looks
@@ -574,6 +924,73 @@ final class DocumentWindowController: NSWindowController {
         render()
     }
 
+    /// Scroll the document to a heading the outline names.
+    ///
+    /// The script is built in AgentiaCore.PageScript, where its escaping is
+    /// tested — the id comes from the document, and this runs with the host's
+    /// authority.
+    func scrollToHeading(id: String) {
+        // The outline describes the rendered document, so jumping to a heading
+        // means going back to it. Previously this ran against a hidden web view
+        // and appeared to do nothing.
+        if mode != .rendered {
+            mode = .rendered
+            render()
+        }
+        guard let script = PageScript.scrollToElement(id: id) else { return }
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    /// Every theme in the bundle, for the menu and the Settings window.
+    var availableThemes: [Theme] { themes }
+    var currentThemeID: String? { theme?.id }
+
+    @objc func showSettings(_ sender: Any?) {
+        if settingsController == nil {
+            settingsController = SettingsWindowController(
+                themes: themes,
+                onChange: { [weak self] themeID, _ in
+                    // Both preferences are already stored; re-render picks up
+                    // the font scale, and selectTheme swaps the stylesheet.
+                    self?.selectTheme(id: themeID)
+                }
+            )
+        }
+        settingsController?.syncFromPreferences()
+        settingsController?.showWindow(nil)
+        settingsController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Steps the reader's text size, keeping to the same ladder the Settings
+    /// slider snaps to so the two cannot disagree.
+    @objc func increaseFontSize(_ sender: Any?) { stepFontSize(by: +1) }
+    @objc func decreaseFontSize(_ sender: Any?) { stepFontSize(by: -1) }
+
+    @objc func resetFontSize(_ sender: Any?) {
+        Preferences.fontScale = 1.0
+        settingsController?.syncFromPreferences()
+        render()
+    }
+
+    private func stepFontSize(by delta: Int) {
+        let steps = Preferences.fontScaleSteps
+        let current = Preferences.fontScale
+        let index = steps.enumerated()
+            .min { abs($0.element - current) < abs($1.element - current) }?.offset ?? 3
+        let next = min(max(index + delta, 0), steps.count - 1)
+        guard steps[next] != current else { return }
+
+        Preferences.fontScale = steps[next]
+        settingsController?.syncFromPreferences()
+        render()
+    }
+
+    @objc func selectThemeFromMenu(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        selectTheme(id: id)
+        settingsController?.syncFromPreferences()
+    }
+
     // MARK: - Errors
 
     private func presentError(_ error: Swift.Error, whileOpening url: URL?) {
@@ -588,6 +1005,33 @@ final class DocumentWindowController: NSWindowController {
         } else {
             alert.runModal()
         }
+    }
+}
+
+// MARK: - Closing
+
+extension DocumentWindowController: NSWindowDelegate {
+
+    /// Closing with unsaved edits asks first.
+    ///
+    /// Returns false and closes later: the prompt is a sheet, so the answer
+    /// arrives after this method has already had to return.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard canSave else { return true }
+        confirmDiscardingEdits { [weak sender] proceed in
+            guard proceed, let sender else { return }
+            // markSaved first, or this returns false again and loops.
+            self.discardEdits()
+            sender.close()
+        }
+        return false
+    }
+
+    /// Drop unsaved edits without writing them, for the paths where the reader
+    /// has explicitly chosen to lose them.
+    func discardEdits() {
+        sourceEditor?.markSaved()
+        window?.isDocumentEdited = false
     }
 }
 
@@ -617,6 +1061,9 @@ extension DocumentWindowController: NSMenuItemValidation, NSToolbarItemValidatio
              #selector(revealInFinder(_:)), #selector(performFind(_:)),
              #selector(shareDocument(_:)):
             return snapshot != nil
+        case #selector(saveDocument(_:)):
+            // Nothing to save unless the reader has actually edited something.
+            return canSave
         case #selector(toggleSource(_:)):
             // Source view works for anything, including an HTML artifact — it
             // is the one way to read an artifact's markup rather than run it.
@@ -634,8 +1081,10 @@ extension DocumentWindowController: HardenedWebViewDelegate {
 
     func webView(_ view: HardenedWebView, didReceive message: PageMessage) {
         switch message {
-        case .ready:
+        case .ready(let outline, _):
             Launch.reportFirstPaint()
+            // The page has always sent this; it used to be discarded.
+            sidebarView?.setOutline(outline)
 
         case .scroll(let fraction):
             // Remembered so a live reload lands where the reader was.

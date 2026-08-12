@@ -9,6 +9,15 @@
 #
 # Run after editing the SVG:
 #     design/make-icon.sh
+#
+# On macOS 26 the system masks every app icon into its own squircle and adds the
+# Liquid Glass edge treatment, so the SVG is drawn full-bleed with no rounded
+# corners of its own — see the note in icon.svg. Apple's newer `.icon` format
+# (layered, assembled by the OS, authored in Icon Composer) would additionally
+# give the icon proper specular and depth layers, but Icon Composer is a GUI in
+# Xcode 26 with no command-line equivalent, so it cannot be produced from this
+# script. A `.icns` remains supported and is what ships; adding a `.icon`
+# alongside it is a later, GUI-bound step.
 
 set -euo pipefail
 

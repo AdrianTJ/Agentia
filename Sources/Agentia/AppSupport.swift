@@ -23,6 +23,29 @@ enum Preferences {
         return name == .darkAqua ? .dark : .light
     }
 
+    /// Body text multiplier. 1.0 is whatever the theme chose.
+    static var fontScale: Double {
+        get {
+            let stored = defaults.double(forKey: "fontScale")
+            // A missing key reads as 0, which is not a scale anyone asked for.
+            guard stored > 0 else { return 1.0 }
+            return min(max(stored, RenderShell.Display.range.lowerBound),
+                       RenderShell.Display.range.upperBound)
+        }
+        set {
+            defaults.set(min(max(newValue, RenderShell.Display.range.lowerBound),
+                             RenderShell.Display.range.upperBound),
+                         forKey: "fontScale")
+        }
+    }
+
+    /// The steps ⌘+ and ⌘− move through.
+    ///
+    /// Multiplicative rather than a fixed increment, so each press is the same
+    /// perceptual change at any size — +0.1 is a big jump at 0.8 and barely
+    /// visible at 2.0.
+    static let fontScaleSteps: [Double] = [0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0]
+
     static func pinAppearance(_ appearance: RenderShell.Appearance?) {
         if let appearance {
             defaults.set(appearance.rawValue, forKey: "appearance")
@@ -118,6 +141,14 @@ enum Clipboard {
             #"(?i)\s(src|href|poster|srcset|background|data|xlink:href)\s*=\s*"[^"]*""#,
             #"(?i)\s(src|href|poster|srcset|background|data|xlink:href)\s*=\s*'[^']*'"#,
             #"(?i)url\(\s*['"]?[^)]*\)"#,
+            // `@import "…";` fetches without `url()` and without an attribute,
+            // so every pattern above misses it. A security audit copied a
+            // document whose <style> tag carried a form feed in its tag name —
+            // which cmark's tagfilter let through — and the RTF importer really
+            // did fetch the imported sheet, verified against a local listener.
+            // That path has no CSP and no content rule list behind it; this
+            // regex is the only thing standing there.
+            #"(?i)@import\s+[^;]*;?"#,
         ]
 
         var out = html
@@ -412,10 +443,20 @@ final class SidebarView: NSView {
 
     static let preferredWidth: CGFloat = 228
 
+    /// What the list is showing. Two things are worth navigating from here —
+    /// the other files of the run, and the headings of this one — and a
+    /// segmented control is cheaper than two panes for a 228pt column.
+    enum Mode: Int {
+        case documents, outline
+    }
+
     private weak var controller: DocumentWindowController?
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
+    private let modeControl = NSSegmentedControl()
     private var documents: [URL] = []
+    private var outline: [OutlineItem] = []
+    private var mode: Mode = .documents
 
     /// Set while the table's selection is being changed programmatically, so
     /// reloading the list does not read as the reader picking a document and
@@ -450,41 +491,121 @@ final class SidebarView: NSView {
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        modeControl.segmentStyle = .texturedRounded
+        modeControl.segmentCount = 2
+        modeControl.setLabel("Files", forSegment: 0)
+        modeControl.setLabel("Outline", forSegment: 1)
+        modeControl.selectedSegment = 0
+        modeControl.target = self
+        modeControl.action = #selector(modeChanged)
+        modeControl.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(modeControl)
         addSubview(scrollView)
 
+        // Contents keep a fixed width and are anchored to the leading edge,
+        // rather than stretching between both edges.
+        //
+        // The sidebar collapses by clipping — its width constraint goes to 0
+        // while clipsToBounds hides what overflows. Pinning a control to both
+        // edges instead asks it to be -20pt wide when collapsed, which is
+        // unsatisfiable: AppKit logged a conflict on every single launch and
+        // recovered by permanently breaking the trailing constraint, so the
+        // control's right edge no longer tracked the sidebar once expanded.
+        // Fixed width has no such conflict to resolve.
         NSLayoutConstraint.activate([
+            modeControl.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            modeControl.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            modeControl.widthAnchor.constraint(
+                equalToConstant: Self.preferredWidth - 20),
+
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.widthAnchor.constraint(equalToConstant: Self.preferredWidth),
+            scrollView.topAnchor.constraint(equalTo: modeControl.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+    }
+
+    @objc private func modeChanged() {
+        mode = Mode(rawValue: modeControl.selectedSegment) ?? .documents
+        tableView.reloadData()
+        syncSelection()
+    }
+
+    /// The headings of the document on screen, as `shell.js` found them.
+    ///
+    /// The page has always sent this on every load and the host has always
+    /// thrown it away.
+    func setOutline(_ items: [OutlineItem]) {
+        let wasShowingOutline = mode == .outline
+        outline = items
+
+        // An empty outline would make the segment a dead end, so it is disabled
+        // rather than offering a blank list — a document with no headings is
+        // ordinary, not an error.
+        modeControl.setEnabled(!items.isEmpty, forSegment: 1)
+        if items.isEmpty, wasShowingOutline {
+            mode = .documents
+            modeControl.selectedSegment = 0
+        }
+
+        // Reload if the outline is showing *or* was a moment ago. Testing the
+        // mode after the fallback above had already changed it meant the one
+        // case that most needs a redraw — outline mode, new document with no
+        // headings — was the one case that skipped it, leaving the previous
+        // document's headings on screen under a list that had switched to
+        // Files.
+        if wasShowingOutline || mode == .outline {
+            tableView.reloadData()
+            syncSelection()
+        }
     }
 
     /// Show `documents`, with `selected` highlighted.
     func reload(documents: [URL], selected: URL?) {
         self.documents = documents
+        self.selectedDocument = selected
         tableView.reloadData()
+        syncSelection()
+    }
 
+    private var selectedDocument: URL?
+
+    /// Highlight the row matching the current state, without letting that read
+    /// as the reader picking something.
+    private func syncSelection() {
         isSyncingSelection = true
         defer { isSyncingSelection = false }
 
-        if let selected, let row = documents.firstIndex(of: selected) {
-            tableView.selectRowIndexes([row], byExtendingSelection: false)
-        } else {
+        guard mode == .documents,
+              let selectedDocument,
+              let row = documents.firstIndex(of: selectedDocument)
+        else {
+            // Outline rows are jump targets, not a selection: nothing in the
+            // document is "selected" just because it is on screen.
             tableView.deselectAll(nil)
+            return
         }
+        tableView.selectRowIndexes([row], byExtendingSelection: false)
     }
 }
 
 extension SidebarView: NSTableViewDataSource, NSTableViewDelegate {
 
-    func numberOfRows(in tableView: NSTableView) -> Int { documents.count }
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        mode == .documents ? documents.count : outline.count
+    }
 
     func tableView(
         _ tableView: NSTableView,
         viewFor tableColumn: NSTableColumn?,
         row: Int
     ) -> NSView? {
+        if mode == .outline {
+            return outlineRow(row)
+        }
+
         let url = documents[row]
 
         let title = NSTextField(labelWithString: url.lastPathComponent)
@@ -508,9 +629,52 @@ extension SidebarView: NSTableViewDataSource, NSTableViewDelegate {
         return stack
     }
 
+    /// One row of the outline, indented by heading level.
+    ///
+    /// Indentation rather than a disclosure tree: an outline is read at a
+    /// glance to find a section, and a tree adds twist-downs to collapse the
+    /// very structure you opened it to see.
+    private func outlineRow(_ row: Int) -> NSView {
+        let item = outline[row]
+
+        let title = NSTextField(labelWithString: item.title)
+        title.lineBreakMode = .byTruncatingTail
+        // Top-level headings carry the weight; deeper ones recede, so the shape
+        // of the document is legible without reading any of it.
+        title.font = .systemFont(ofSize: item.level <= 2 ? 12 : 11,
+                                 weight: item.level <= 2 ? .medium : .regular)
+        title.textColor = item.level <= 2 ? .labelColor : .secondaryLabelColor
+
+        let stack = NSStackView(views: [title])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        // h1 sits flush; each level indents. Clamped so a stray h6 in a deeply
+        // nested document does not push its text off the column entirely.
+        let depth = CGFloat(min(max(item.level - 1, 0), 3))
+        stack.edgeInsets = NSEdgeInsets(top: 2, left: 8 + depth * 13,
+                                        bottom: 2, right: 8)
+        return stack
+    }
+
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard !isSyncingSelection else { return }
         let row = tableView.selectedRow
+
+        if mode == .outline {
+            guard outline.indices.contains(row) else { return }
+            controller?.scrollToHeading(id: outline[row].id)
+
+            // Drop the highlight straight away. An outline row is a jump, not a
+            // selection: leaving it lit claims the reader is "in" that section,
+            // which stops being true the moment they scroll. syncSelection()
+            // already said so but only ran on mode changes and list reloads,
+            // never on the click itself, so the highlight stuck indefinitely.
+            isSyncingSelection = true
+            tableView.deselectAll(nil)
+            isSyncingSelection = false
+            return
+        }
+
         guard documents.indices.contains(row) else { return }
         controller?.open(documents[row])
     }

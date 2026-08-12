@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// NSMenu holds its delegate weakly, so without this the Open With submenu
     /// would populate itself exactly once and then silently stop.
     private var openWithMenuDelegate: OpenWithMenu?
+    private var themeMenuDelegate: ThemeMenu?
 
     static func main() {
         Launch.processStart = Date()
@@ -96,11 +97,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         windowController.showWindow(nil)
         if !hasOpenedDocument {
-            // Launched with no document: an empty state rather than a blank
-            // page. Guarded, or the most important flow in the app — double
-            // clicking a .md in Finder — would render the document and then
-            // immediately overwrite it with "Open a file to begin".
-            windowController.showEmptyState()
+            // Launched with no document: open a scratch file to write in
+            // rather than a page explaining how to open one. Still guarded, or
+            // the most important flow in the app — double clicking a .md in
+            // Finder — would render that document and then immediately replace
+            // it with the scratchpad.
+            windowController.openScratchDocument()
         }
     }
 
@@ -135,6 +137,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Note there is still no Close item in the File menu, so ⌘W does nothing;
     /// the red button is the only way to close. Worth adding, but it is a
     /// separate change from making the close survivable.
+    /// Quitting with unsaved edits asks first, the same as closing.
+    ///
+    /// ⌘Q is the other way to lose a buffer, and it bypasses windowShouldClose
+    /// entirely.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard windowController?.canSave == true else { return .terminateNow }
+        windowController.confirmDiscardingEdits { proceed in
+            if proceed { self.windowController.discardEdits() }
+            NSApp.reply(toApplicationShouldTerminate: proceed)
+        }
+        return .terminateLater
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -163,7 +178,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Settings…", action: nil, keyEquivalent: ",")
+        appMenu.addItem(withTitle: "Settings…",
+                        action: #selector(DocumentWindowController.showSettings(_:)),
+                        keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Agentia",
                         action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -174,6 +191,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: "File")
+        // Reachable after opening something else, so the scratchpad is not a
+        // launch-only accident.
+        fileMenu.addItem(withTitle: "Scratchpad",
+                         action: #selector(DocumentWindowController.openScratchDocument),
+                         keyEquivalent: "n")
         fileMenu.addItem(withTitle: "Open…",
                          action: #selector(DocumentWindowController.openDocument(_:)),
                          keyEquivalent: "o")
@@ -184,6 +206,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(withTitle: "Close",
                          action: #selector(NSWindow.performClose(_:)),
                          keyEquivalent: "w")
+        fileMenu.addItem(withTitle: "Save",
+                         action: #selector(DocumentWindowController.saveDocument(_:)),
+                         keyEquivalent: "s")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Export as PDF…",
                          action: #selector(DocumentWindowController.exportPDF(_:)),
@@ -234,6 +259,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(withTitle: "Toggle Diff",
                          action: #selector(DocumentWindowController.toggleDiff(_:)),
                          keyEquivalent: "d")
+        viewMenu.addItem(.separator())
+
+        // The themes have shipped in the bundle from the start with no way to
+        // pick one. Here as well as in Settings, because switching theme while
+        // reading is a view decision, not a configuration one.
+        let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu(title: "Theme")
+        let themeDelegate = ThemeMenu(controller: windowController)
+        themeMenu.delegate = themeDelegate
+        themeMenuDelegate = themeDelegate
+        themeItem.submenu = themeMenu
+        viewMenu.addItem(themeItem)
+
+        viewMenu.addItem(.separator())
+        viewMenu.addItem(withTitle: "Bigger Text",
+                         action: #selector(DocumentWindowController.increaseFontSize(_:)),
+                         keyEquivalent: "+")
+        viewMenu.addItem(withTitle: "Smaller Text",
+                         action: #selector(DocumentWindowController.decreaseFontSize(_:)),
+                         keyEquivalent: "-")
+        viewMenu.addItem(withTitle: "Actual Size",
+                         action: #selector(DocumentWindowController.resetFontSize(_:)),
+                         keyEquivalent: "0")
         viewItem.submenu = viewMenu
         mainMenu.addItem(viewItem)
 

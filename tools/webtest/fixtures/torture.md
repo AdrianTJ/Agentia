@@ -92,3 +92,11 @@ Footnote reference[^method] and a second one[^data].
 Ship the reranker. Hold the pool width at 20 until the chunker fix lands, then re-measure —
 the p99 regression is almost certainly an artifact of fragmented tables inflating the
 candidate set with near-duplicates.
+
+
+<h2 id="dupe">Explicit id</h2>
+
+A heading with an author-supplied id, repeated below — the outline must still
+be able to reach both.
+
+<h2 id="dupe">Explicit id repeated</h2>

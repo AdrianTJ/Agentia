@@ -122,6 +122,8 @@ export function bootstrapJSON(config) {
  * @param {"light"|"dark"} o.appearance
  * @param {string} o.profile
  * @param {object} o.bootstrap   diffRanges, scrollFraction, …
+ * @param {number} o.fontScale   reader font-size multiplier, mirrors
+ *                               RenderShell.Display
  */
 export function buildPage({
   content,
@@ -130,6 +132,7 @@ export function buildPage({
   appearance = "light",
   profile = Profile.markdown,
   bootstrap = {},
+  fontScale = 1,
 }) {
   const template = readFileSync(join(SHELL_DIR, "shell.html"), "utf8");
   const baseCSS = readFileSync(join(SHELL_DIR, "base.css"), "utf8");
@@ -142,12 +145,27 @@ export function buildPage({
     TITLE: escapeForHTMLText(title),
     BASE_CSS: baseCSS,
     THEME_CSS: themeCSS(themeId),
+    USER_CSS: displayCSS(fontScale),
     BOOTSTRAP_JSON: bootstrapJSON(bootstrap),
     CONTENT: content,
     SHELL_JS: js,
   };
 
   return substitute(template, values);
+}
+
+/**
+ * Reader preferences as CSS. Mirrors AgentiaCore.RenderShell.Display.css,
+ * including its clamp and its four-decimal formatting — an exponent would not
+ * parse as CSS.
+ */
+export function displayCSS(fontScale = 1) {
+  const scale = Math.min(Math.max(fontScale, 0.7), 2.0);
+  if (scale === 1) return "";
+  // The print reset ships with the scale, not in base.css: this block is
+  // written later at the same specificity, so a reset there loses to it.
+  return `:root{--agentia-scale:${scale.toFixed(4)}}`
+    + "@media print{:root{--agentia-scale:1}}";
 }
 
 /**
