@@ -42,7 +42,7 @@ final class ViewModeTests: XCTestCase {
     /// directly would skip the very callback under test.
     private func type(_ text: String) throws {
         let editor = try XCTUnwrap(controller.sourceEditor)
-        editor.textView.insertText(text, replacementRange: NSRange(location: 0, length: 0))
+        editor.insertText(text)
     }
 
     // MARK: - What gets rendered
@@ -85,7 +85,9 @@ final class ViewModeTests: XCTestCase {
         controller.toggleSource(nil)       // rendered
         controller.toggleSource(nil)       // and back
 
-        XCTAssertTrue(controller.currentSource.hasPrefix("edited "),
+        // Contains, not hasPrefix: the text lands at the caret, wherever that
+        // is. What matters is that it survived the round trip.
+        XCTAssertTrue(controller.currentSource.contains("edited "),
                       "returning to the editor reloaded the file over the edits")
     }
 

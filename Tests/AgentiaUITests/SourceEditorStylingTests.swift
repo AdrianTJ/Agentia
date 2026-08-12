@@ -25,15 +25,11 @@ final class SourceEditorStylingTests: XCTestCase {
     }
 
     private func font(at location: Int) throws -> NSFont {
-        let storage = try XCTUnwrap(editor.textView.textStorage)
-        let value = storage.attribute(.font, at: location, effectiveRange: nil)
-        return try XCTUnwrap(value as? NSFont)
+        try XCTUnwrap(editor.attribute(.font, at: location) as? NSFont)
     }
 
     private func colour(at location: Int) throws -> NSColor {
-        let storage = try XCTUnwrap(editor.textView.textStorage)
-        let value = storage.attribute(.foregroundColor, at: location, effectiveRange: nil)
-        return try XCTUnwrap(value as? NSColor)
+        try XCTUnwrap(editor.attribute(.foregroundColor, at: location) as? NSColor)
     }
 
     private func location(of substring: String, in source: String) throws -> Int {
@@ -134,8 +130,7 @@ final class SourceEditorStylingTests: XCTestCase {
 
     func testTypingLeavesTheTextExactlyAsTyped() {
         editor.load("")
-        editor.textView.insertText("# Title\n\nsome **bold**",
-                                   replacementRange: NSRange(location: 0, length: 0))
+        editor.insertText("# Title\n\nsome **bold**")
         XCTAssertEqual(editor.text, "# Title\n\nsome **bold**")
     }
 
@@ -161,7 +156,7 @@ final class SourceEditorStylingTests: XCTestCase {
         editor.frame = NSRect(x: 0, y: 0, width: 1600, height: 600)
         editor.layoutSubtreeIfNeeded()
 
-        let inset = editor.textView.textContainerInset.width
+        let inset = editor.textInsets.width
         XCTAssertGreaterThan(inset, 100, "text runs the full width of a wide window")
     }
 
@@ -171,7 +166,7 @@ final class SourceEditorStylingTests: XCTestCase {
         editor.frame = NSRect(x: 0, y: 0, width: 420, height: 600)
         editor.layoutSubtreeIfNeeded()
 
-        let inset = editor.textView.textContainerInset.width
+        let inset = editor.textInsets.width
         XCTAssertEqual(inset, 24, accuracy: 0.5)
     }
 

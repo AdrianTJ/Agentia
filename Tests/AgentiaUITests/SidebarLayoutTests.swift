@@ -32,18 +32,8 @@ final class SidebarLayoutTests: XCTestCase {
 
     private var window: NSWindow { controller.window! }
 
-    private func firstDescendant<T: NSView>(_ type: T.Type) -> T? {
-        var queue = window.contentView?.subviews ?? []
-        while !queue.isEmpty {
-            let view = queue.removeFirst()
-            if let match = view as? T { return match }
-            queue.append(contentsOf: view.subviews)
-        }
-        return nil
-    }
-
     func testSidebarOpensToItsFullWidth() {
-        let sidebar = firstDescendant(SidebarView.self)
+        let sidebar = window.firstDescendant(SidebarView.self)
         XCTAssertEqual(sidebar?.frame.width, SidebarView.preferredWidth)
         XCTAssertEqual(sidebar?.isHidden, false)
     }
@@ -51,29 +41,22 @@ final class SidebarLayoutTests: XCTestCase {
     /// The bug, exactly: the sidebar's mode control overlapping the window
     /// buttons.
     func testModeControlClearsTheWindowButtons() throws {
-        let control = try XCTUnwrap(firstDescendant(NSSegmentedControl.self),
+        let control = try XCTUnwrap(window.firstDescendant(NSSegmentedControl.self),
                                     "sidebar mode control not found")
-        let controlInWindow = control.convert(control.bounds, to: nil)
-
-        for kind: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
-            let button = try XCTUnwrap(window.standardWindowButton(kind))
-            let buttonInWindow = button.convert(button.bounds, to: nil)
-            XCTAssertFalse(controlInWindow.intersects(buttonInWindow),
-                           "Files/Outline control is drawn over the \(kind)")
-        }
+        assertClearsWindowButtons(control, in: window)
     }
 
     /// The document keeps the rest of the window: a sidebar that overlapped the
     /// web view would hide the left edge of every line of text.
     func testSidebarAndDocumentDoNotOverlap() throws {
-        let sidebar = try XCTUnwrap(firstDescendant(SidebarView.self))
-        let web = try XCTUnwrap(firstDescendant(HardenedWebView.self))
+        let sidebar = try XCTUnwrap(window.firstDescendant(SidebarView.self))
+        let web = try XCTUnwrap(window.firstDescendant(HardenedWebView.self))
         XCTAssertFalse(sidebar.frame.intersects(web.frame))
         XCTAssertEqual(sidebar.frame.maxX, web.frame.minX, accuracy: 0.5)
     }
 
     func testClosingTheSidebarGivesTheWidthBack() {
-        let web = firstDescendant(HardenedWebView.self)
+        let web = window.firstDescendant(HardenedWebView.self)
         let openWidth = web?.frame.width ?? 0
 
         controller.setSidebarVisible(false, animated: false)
@@ -81,7 +64,7 @@ final class SidebarLayoutTests: XCTestCase {
 
         XCTAssertEqual(web?.frame.width ?? 0, openWidth + SidebarView.preferredWidth,
                        accuracy: 0.5)
-        XCTAssertEqual(firstDescendant(SidebarView.self)?.isHidden, true)
+        XCTAssertEqual(window.firstDescendant(SidebarView.self)?.isHidden, true)
     }
 
     /// Whether the sidebar is open is remembered, so opening the file list once

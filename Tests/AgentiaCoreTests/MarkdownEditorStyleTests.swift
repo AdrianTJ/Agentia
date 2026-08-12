@@ -244,6 +244,53 @@ final class MarkdownEditorStyleTests: XCTestCase {
         XCTAssertTrue(spans(huge).isEmpty)
     }
 
+    /// A single long line of unmatched delimiters must not be quadratic.
+    ///
+    /// The first version rescanned to the end of the line for every candidate
+    /// that never found a partner, so one long line cost O(n²): 400,000
+    /// unmatched `[` took 76 seconds. That is not an exotic input — a raw regex
+    /// character class, an unwrapped JSON array, or a line of `2 * 3 * 4` all
+    /// produce it, and this runs on every keystroke, so the whole app would
+    /// stop responding until it finished.
+    ///
+    /// The document-level cap does not help: every input here is well inside it.
+    func testPathologicalLinesAreNotQuadratic() {
+        let cases = [
+            ("unmatched brackets", String(repeating: "[", count: 100_000)),
+            ("unclosed italics", String(repeating: "*a ", count: 100_000)),
+            ("unclosed bold", String(repeating: "**a ", count: 50_000)),
+            ("unclosed code", String(repeating: "`a ", count: 100_000)),
+            ("bracket soup", String(repeating: "[a](", count: 50_000)),
+        ]
+
+        for (name, line) in cases {
+            XCTAssertLessThan(line.utf16.count, MarkdownEditorStyle.maximumStyledUnits,
+                              "\(name) must be inside the cap, or this proves nothing")
+            let started = Date()
+            _ = spans(line)
+            let elapsed = Date().timeIntervalSince(started)
+            XCTAssertLessThan(elapsed, 1.0, "\(name): \(line.utf16.count) units")
+        }
+    }
+
+    /// Doubling the input must not quadruple the time.
+    func testCostGrowsLinearlyWithLineLength() {
+        func time(_ count: Int) -> TimeInterval {
+            let line = String(repeating: "*a ", count: count)
+            let started = Date()
+            _ = spans(line)
+            return Date().timeIntervalSince(started)
+        }
+
+        _ = time(2_000)                            // warm up
+        let small = max(time(20_000), 0.0005)      // floor, so the ratio is meaningful
+        let large = time(80_000)
+
+        // 4× the input. Linear would be ~4×; quadratic would be ~16×.
+        XCTAssertLessThan(large / small, 8.0,
+                          "cost is growing faster than the input")
+    }
+
     func testARealisticDocumentIsScannedQuickly() {
         let document = String(
             repeating: """

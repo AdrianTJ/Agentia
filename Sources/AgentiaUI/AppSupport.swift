@@ -544,10 +544,19 @@ final class SidebarView: NSView {
     /// Switch the list, as the segment does. Not private so tests can reach the
     /// outline path without synthesising a click on the segmented control.
     func select(mode newMode: Mode) {
-        mode = newMode
-        modeControl.selectedSegment = newMode.rawValue
+        setMode(newMode)
         tableView.reloadData()
         syncSelection()
+    }
+
+    /// The mode and the segment that displays it, which must never disagree.
+    ///
+    /// Kept apart from the reload above because `setOutline` changes the mode on
+    /// a different schedule — it has its own reason to reload, explained there —
+    /// but the two-step "set the mode, move the segment" belongs in one place.
+    private func setMode(_ newMode: Mode) {
+        mode = newMode
+        modeControl.selectedSegment = newMode.rawValue
     }
 
     /// The headings of the document on screen, as `shell.js` found them.
@@ -563,8 +572,7 @@ final class SidebarView: NSView {
         // ordinary, not an error.
         modeControl.setEnabled(!items.isEmpty, forSegment: 1)
         if items.isEmpty, wasShowingOutline {
-            mode = .documents
-            modeControl.selectedSegment = 0
+            setMode(.documents)
         }
 
         // Reload if the outline is showing *or* was a moment ago. Testing the

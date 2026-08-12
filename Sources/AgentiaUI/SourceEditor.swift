@@ -33,10 +33,7 @@ final class SourceEditor: NSView {
     /// Called on the first keystroke after the buffer was clean.
     private let onDirty: () -> Void
 
-    /// Not private so tests can drive real text input through it —
-    /// `insertText` goes through the text system and fires the same delegate
-    /// callback a keystroke does, which a test-only hook would not.
-    let textView = NSTextView()
+    private let textView = NSTextView()
     private let scrollView = NSScrollView()
 
     private var typography = EditorTypography(scale: 1.0)
@@ -107,6 +104,37 @@ final class SourceEditor: NSView {
     /// Mark the buffer saved without touching its contents.
     func markSaved() {
         isDirty = false
+    }
+
+    // MARK: - Narrow access to the text view
+    //
+    // The text view itself stays private. Handing it out — even inside the
+    // module — hands out a mutable object, and setting `.string` on it directly
+    // would bypass `load()`, skip the delegate callback, and leave `isDirty`
+    // claiming the buffer is clean while it is not. Saving, the unsaved-changes
+    // prompt and the hold on sudden termination all trust that flag.
+
+    /// Insert text at the caret, exactly as typing does.
+    ///
+    /// Goes through the text system, so the delegate fires and the buffer
+    /// becomes dirty the same way it would for a person at the keyboard. Used by
+    /// the tests, where a hook that assigned the string directly would skip the
+    /// very callback under test.
+    func insertText(_ text: String) {
+        textView.insertText(text, replacementRange: textView.selectedRange())
+    }
+
+    /// The styling attribute in force at a position, for asserting on what the
+    /// reader would see.
+    func attribute(_ key: NSAttributedString.Key, at location: Int) -> Any? {
+        guard let storage = textView.textStorage,
+              location < storage.length else { return nil }
+        return storage.attribute(key, at: location, effectiveRange: nil)
+    }
+
+    /// The margins the text is currently laid out with. See `updateInsets`.
+    var textInsets: NSSize {
+        textView.textContainerInset
     }
 
     func focus() {
@@ -266,12 +294,7 @@ final class SourceEditor: NSView {
                                  value: NSUnderlineStyle.single.rawValue, range: range)
             storage.addAttribute(.foregroundColor, value: typography.syntax, range: range)
 
-        case .inlineCode:
-            storage.addAttribute(.font, value: typography.monospace, range: range)
-            storage.addAttribute(.foregroundColor, value: typography.code, range: range)
-            storage.addAttribute(.backgroundColor, value: typography.codeBackground, range: range)
-
-        case .codeBlock:
+        case .inlineCode, .codeBlock:
             storage.addAttribute(.font, value: typography.monospace, range: range)
             storage.addAttribute(.foregroundColor, value: typography.code, range: range)
             storage.addAttribute(.backgroundColor, value: typography.codeBackground, range: range)
