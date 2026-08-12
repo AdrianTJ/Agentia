@@ -167,6 +167,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Menu
 
+    /// The standard About panel, with the commit this build came from.
+    ///
+    /// An installed copy keeps running the code it was built from, so a build
+    /// that was never reinstalled looks exactly like one that ignored your
+    /// changes. `AGBuildRevision` is stamped by `tools/make-app.sh`; showing it
+    /// here means the app can answer "is this current?" without hashing the
+    /// binary. A build made outside that script has no stamp, and then this is
+    /// the plain system panel.
+    @objc private func showAbout(_ sender: Any?) {
+        let info = Bundle.main.infoDictionary
+        guard let revision = info?["AGBuildRevision"] as? String else {
+            NSApp.orderFrontStandardAboutPanel(sender)
+            return
+        }
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationVersion: "\(revision) · build \(build)"
+        ])
+    }
+
     /// Built in code because the app ships without a nib — one less thing to
     /// load before first paint.
     private func installMenu() {
@@ -175,7 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About Agentia",
-                        action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                        action: #selector(showAbout),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Settings…",
