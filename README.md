@@ -42,6 +42,24 @@ directly through its C API — there is no intermediate shim to keep in step.
 | Shell | `Sources/AgentiaCore/Resources/` | HTML template, base CSS, pinned script, six themes |
 | CLI | `Sources/agentia-render-cli/` | Drives the renderer from a terminal, so the browser suite tests the code the app ships |
 
+## Editing
+
+The editor holds Markdown and styles it in place: headings at heading size, `**bold**`
+actually bold, code in a monospace face, and the markers themselves dimmed so they recede
+without disappearing. The file written back is byte-for-byte what was typed.
+
+Making the *rendered* HTML editable was the obvious alternative and was rejected. It means
+converting HTML back to Markdown on every save, and that conversion normalises the whole
+document — list markers, heading style, line wrapping — not just the part that was edited.
+For an app whose premise is showing what an agent changed since the last run, a save that
+reformats every line makes the diff worthless.
+
+`MarkdownEditorStyle` is deliberately not a parser and must never be asked to agree with
+cmark on edge cases: it runs on every keystroke, usually on text that is mid-word and not
+valid Markdown yet. The rendered view remains the source of truth for what a document
+*means*. Markers stay visible rather than being hidden when the caret leaves them — hiding
+them reflows the text as the caret moves, and you cannot delete a `**` you cannot see.
+
 ## Security model
 
 Agent-written HTML is code nobody reviewed. Containment is **three independent mechanisms**,
@@ -85,7 +103,7 @@ layer.
 
 ```bash
 swift build                           # core, app, and the render CLI
-swift test                            # 255 checks, green in debug and release
+swift test                            # 296 checks, green in debug and release
 node tools/webtest/run-tests.mjs      # render shell in real Chromium — 210 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 tools/make-app.sh                     # builds .build/Agentia.app
@@ -132,14 +150,14 @@ Being honest about this matters more than looking finished.
 | Parsing core | **Tested.** 51 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
 | Render shell, themes, print CSS | **Tested in a real browser.** 210 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
 | Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors, plus XCTest |
-| AgentiaCore Swift | **Tested.** 231 XCTest cases, run in both debug and release |
-| macOS app layer | **Partly tested.** 24 XCTest cases over window layout, view modes and the sidebar's list. The rest is WebKit wiring, verified by use |
+| AgentiaCore Swift | **Tested.** 259 XCTest cases, run in both debug and release |
+| macOS app layer | **Partly tested.** 37 XCTest cases over window layout, view modes, editor styling and the sidebar's list. The rest is WebKit wiring, verified by use |
 
 The app layer had none of that until a build shipped with the sidebar drawn on top of the
 traffic lights and the rendered view showing a freshly-typed document as empty — both plain
 logic, neither catchable, because the whole AppKit layer lived in an executable target with
 `@main` and no test bundle can import one. Splitting `AgentiaUI` out of the executable is
-what made those 24 cases possible.
+what made those cases possible.
 
 Layout is asserted, not eyeballed: the tests build a real window, run Auto Layout, and check
 that no content intersects the window buttons. They never call `showWindow`, so running the
