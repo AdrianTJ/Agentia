@@ -17,7 +17,10 @@ final class SourceEditor: NSView {
     /// Called on the first keystroke after the buffer was clean.
     private let onDirty: () -> Void
 
-    private let textView = NSTextView()
+    /// Not private so tests can drive real text input through it —
+    /// `insertText` goes through the text system and fires the same delegate
+    /// callback a keystroke does, which a test-only hook would not.
+    let textView = NSTextView()
     private let scrollView = NSScrollView()
 
     /// True once the reader has typed something not yet saved.

@@ -40,7 +40,18 @@ enum Launch {
     }
 }
 
-@main
+/// The app's entry point, and the only thing the executable target imports.
+///
+/// `@main` used to sit on `AppDelegate` in an executable target, which is
+/// precisely what a test bundle cannot import — so the window, its layout and
+/// the view-mode machinery had no tests at all, and shipped with the sidebar
+/// drawn under the traffic lights.
+public enum AgentiaApp {
+    public static func main() {
+        AppDelegate.main()
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var webView: HardenedWebView!
@@ -96,6 +107,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installMenu()
 
         windowController.showWindow(nil)
+
+        // Restore the sidebar if it was open. Done here rather than in the
+        // window controller's init so it stays off the path to first paint —
+        // it reads a folder listing, and nothing about the document needs it.
+        if Preferences.sidebarVisible {
+            windowController.setSidebarVisible(true, animated: false)
+        }
+
         if !hasOpenedDocument {
             // Launched with no document: open a scratch file to write in
             // rather than a page explaining how to open one. Still guarded, or

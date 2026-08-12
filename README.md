@@ -37,7 +37,8 @@ directly through its C API — there is no intermediate shim to keep in step.
 | Layer | Path | What it does |
 | --- | --- | --- |
 | Core | `Sources/AgentiaCore/` | cmark-gfm driving, GFM extensions, footnotes, source positions, page assembly, themes, diff engine, asset-path validation |
-| App | `Sources/Agentia/` | AppKit shell, hardened web view, `artifact://` handler, FSEvents watcher, PDF export |
+| App UI | `Sources/AgentiaUI/` | AppKit shell, hardened web view, `artifact://` handler, FSEvents watcher, PDF export |
+| App | `Sources/Agentia/` | The executable. Four lines that start `AgentiaUI` |
 | Shell | `Sources/AgentiaCore/Resources/` | HTML template, base CSS, pinned script, six themes |
 | CLI | `Sources/agentia-render-cli/` | Drives the renderer from a terminal, so the browser suite tests the code the app ships |
 
@@ -84,7 +85,7 @@ layer.
 
 ```bash
 swift build                           # core, app, and the render CLI
-swift test                            # 231 checks, green in debug and release
+swift test                            # 255 checks, green in debug and release
 node tools/webtest/run-tests.mjs      # render shell in real Chromium — 210 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 tools/make-app.sh                     # builds .build/Agentia.app
@@ -132,7 +133,25 @@ Being honest about this matters more than looking finished.
 | Render shell, themes, print CSS | **Tested in a real browser.** 210 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
 | Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors, plus XCTest |
 | AgentiaCore Swift | **Tested.** 231 XCTest cases, run in both debug and release |
-| macOS app layer | **Partly tested.** The navigation guard moved into AgentiaCore so it could be; the rest is AppKit and WebKit wiring, verified by use |
+| macOS app layer | **Partly tested.** 24 XCTest cases over window layout, view modes and the sidebar's list. The rest is WebKit wiring, verified by use |
+
+The app layer had none of that until a build shipped with the sidebar drawn on top of the
+traffic lights and the rendered view showing a freshly-typed document as empty — both plain
+logic, neither catchable, because the whole AppKit layer lived in an executable target with
+`@main` and no test bundle can import one. Splitting `AgentiaUI` out of the executable is
+what made those 24 cases possible.
+
+Layout is asserted, not eyeballed: the tests build a real window, run Auto Layout, and check
+that no content intersects the window buttons. They never call `showWindow`, so running the
+suite steals nobody's focus.
+
+Assertions still cannot say whether the result *looks* right, and trusting logs over pixels
+is exactly how the overlap shipped. For appearance, capture the running app's own window —
+no screen recording of anything else, and no accessibility APIs:
+
+```bash
+screencapture -o -x -l$(tools/window-id.swift) shot.png
+```
 
 Two harnesses exist to keep implementations that must agree from drifting:
 

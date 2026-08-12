@@ -88,7 +88,12 @@ public struct DocumentRenderer: Sendable {
     /// change reached this type, the CLI and the browser suite — but not the
     /// app, which went on splicing artifacts into `<main class="doc">` while a
     /// full suite of green tests said otherwise.
-    public static func standalonePage(for snapshot: DocumentSnapshot) -> String? {
+    ///
+    /// `source` overrides the snapshot's own text, for the case where the
+    /// reader has unsaved edits: the snapshot holds what was read from disk,
+    /// and the rendered view has to show what is in the editor instead.
+    public static func standalonePage(for snapshot: DocumentSnapshot,
+                                      source: String? = nil) -> String? {
         switch snapshot.kind {
         case .markdown, .plainText:
             return nil
@@ -96,7 +101,7 @@ public struct DocumentRenderer: Sendable {
             // The script hash is irrelevant here: the artifact profile pins no
             // hash, because the document's own script is meant to run.
             return RawArtifact.page(
-                html: snapshot.source,
+                html: source ?? snapshot.source,
                 csp: RenderShell.contentSecurityPolicy(
                     profile: .htmlArtifact, scriptHash: ""
                 )

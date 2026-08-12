@@ -39,6 +39,16 @@ enum Preferences {
         }
     }
 
+    /// Whether the sidebar was open when the app was last used.
+    ///
+    /// A reader who opens the file list is navigating a folder, and having to
+    /// reopen it on every launch makes that worse the more useful it is. It
+    /// stays hidden by default, so a first launch is still the document alone.
+    static var sidebarVisible: Bool {
+        get { defaults.bool(forKey: "sidebarVisible") }
+        set { defaults.set(newValue, forKey: "sidebarVisible") }
+    }
+
     /// The steps ⌘+ and ⌘− move through.
     ///
     /// Multiplicative rather than a fixed increment, so each press is the same
@@ -528,7 +538,14 @@ final class SidebarView: NSView {
     }
 
     @objc private func modeChanged() {
-        mode = Mode(rawValue: modeControl.selectedSegment) ?? .documents
+        select(mode: Mode(rawValue: modeControl.selectedSegment) ?? .documents)
+    }
+
+    /// Switch the list, as the segment does. Not private so tests can reach the
+    /// outline path without synthesising a click on the segmented control.
+    func select(mode newMode: Mode) {
+        mode = newMode
+        modeControl.selectedSegment = newMode.rawValue
         tableView.reloadData()
         syncSelection()
     }
@@ -606,6 +623,14 @@ extension SidebarView: NSTableViewDataSource, NSTableViewDelegate {
             return outlineRow(row)
         }
 
+        // Guarded, because a table can ask for a row its data no longer has.
+        // The list is replaced from three directions — a new document's
+        // outline, a folder rescan, the mode segment — and any reload that
+        // AppKit has not caught up with leaves it asking about a row that was
+        // there a moment ago. An unguarded subscript turns that into a trap
+        // that takes the whole app down, unsaved buffer included, which is a
+        // steep price for a row that is about to be redrawn anyway.
+        guard documents.indices.contains(row) else { return nil }
         let url = documents[row]
 
         let title = NSTextField(labelWithString: url.lastPathComponent)
@@ -634,7 +659,10 @@ extension SidebarView: NSTableViewDataSource, NSTableViewDelegate {
     /// Indentation rather than a disclosure tree: an outline is read at a
     /// glance to find a section, and a tree adds twist-downs to collapse the
     /// very structure you opened it to see.
-    private func outlineRow(_ row: Int) -> NSView {
+    private func outlineRow(_ row: Int) -> NSView? {
+        // Same guard as the document list, and more exposed: the outline is
+        // replaced asynchronously, whenever the page reports its headings.
+        guard outline.indices.contains(row) else { return nil }
         let item = outline[row]
 
         let title = NSTextField(labelWithString: item.title)
