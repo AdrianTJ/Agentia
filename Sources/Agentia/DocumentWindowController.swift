@@ -203,6 +203,29 @@ final class DocumentWindowController: NSWindowController {
         return container
     }
 
+    /// Open the scratch document and put the caret in it.
+    ///
+    /// What launching with no file does now. The old behaviour was a page
+    /// reading "Open a Markdown or HTML file to begin", which is accurate and
+    /// does nothing for someone who opened the app to write something down.
+    ///
+    /// Falls back to that message only if the scratch file cannot be created —
+    /// a full disk, or a sandbox that denies Application Support.
+    @objc func openScratchDocument() {
+        guard let url = ScratchDocument.url(),
+              let ready = try? ScratchDocument.ensure(at: url)
+        else {
+            showEmptyState()
+            return
+        }
+
+        open(ready)
+        // Straight into the editor: the point is to type, and a blank rendered
+        // page would just say the document is empty.
+        mode = .source
+        render()
+    }
+
     func showEmptyState() {
         guard let shell, let theme else { return }
         let body = """

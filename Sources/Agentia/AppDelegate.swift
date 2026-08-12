@@ -97,11 +97,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         windowController.showWindow(nil)
         if !hasOpenedDocument {
-            // Launched with no document: an empty state rather than a blank
-            // page. Guarded, or the most important flow in the app — double
-            // clicking a .md in Finder — would render the document and then
-            // immediately overwrite it with "Open a file to begin".
-            windowController.showEmptyState()
+            // Launched with no document: open a scratch file to write in
+            // rather than a page explaining how to open one. Still guarded, or
+            // the most important flow in the app — double clicking a .md in
+            // Finder — would render that document and then immediately replace
+            // it with the scratchpad.
+            windowController.openScratchDocument()
         }
     }
 
@@ -190,6 +191,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: "File")
+        // Reachable after opening something else, so the scratchpad is not a
+        // launch-only accident.
+        fileMenu.addItem(withTitle: "Scratchpad",
+                         action: #selector(DocumentWindowController.openScratchDocument),
+                         keyEquivalent: "n")
         fileMenu.addItem(withTitle: "Open…",
                          action: #selector(DocumentWindowController.openDocument(_:)),
                          keyEquivalent: "o")
