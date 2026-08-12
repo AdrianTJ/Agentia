@@ -38,7 +38,8 @@ final class DocumentWindowController: NSWindowController {
     private var sidebarView: SidebarView?
     /// Collapsed to zero rather than hidden, so showing it is one animation.
     private var sidebarWidth: NSLayoutConstraint?
-    /// Not private: the UI tests drive real typing through it.
+    /// Read-only outside this type: the tests reach the editor through it, and
+    /// the editor itself only exposes narrow accessors rather than its text view.
     private(set) var sourceEditor: SourceEditor?
     private var findBar: FindBar?
     private var findBarHeight: NSLayoutConstraint?
@@ -403,10 +404,12 @@ final class DocumentWindowController: NSWindowController {
 
     private func render() {
         guard let snapshot, let shell, let theme else { return }
+        // Read once: it copies the editor's buffer, and the diff below wants the
+        // same text the page is about to be built from.
         let source = currentSource
 
         let bootstrap = RenderShell.Bootstrap(
-            diffRanges: diffRangesForCurrentMode(),
+            diffRanges: diffRanges(against: source),
             scrollFraction: lastScrollFraction,
             diffSince: mode == .diff ? baselineTakenAt : nil
         )
@@ -481,14 +484,16 @@ final class DocumentWindowController: NSWindowController {
         "<p class=\"agentia-empty\">\(escapeHTML(message))</p>"
     }
 
-    private func diffRangesForCurrentMode() -> [DiffRange]? {
+    /// Takes the text rather than reading `currentSource` again: the caller has
+    /// it, and reading it once more copies the whole editor buffer for nothing.
+    private func diffRanges(against source: String) -> [DiffRange]? {
         guard mode == .diff,
               snapshot != nil,
               let previous = previousSource else { return nil }
         // Against the editor's text when it is dirty, for the same reason the
         // rendered view uses it: a diff that ignores what the reader just typed
         // is a diff of a document nobody is looking at.
-        let ranges = DiffEngine.changes(from: previous, to: currentSource)
+        let ranges = DiffEngine.changes(from: previous, to: source)
         return ranges.isEmpty ? nil : ranges
     }
 

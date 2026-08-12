@@ -108,13 +108,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         windowController.showWindow(nil)
 
-        // Restore the sidebar if it was open. Done here rather than in the
-        // window controller's init so it stays off the path to first paint —
-        // it reads a folder listing, and nothing about the document needs it.
-        if Preferences.sidebarVisible {
-            windowController.setSidebarVisible(true, animated: false)
-        }
-
         if !hasOpenedDocument {
             // Launched with no document: open a scratch file to write in
             // rather than a page explaining how to open one. Still guarded, or
@@ -122,6 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Finder — would render that document and then immediately replace
             // it with the scratchpad.
             windowController.openScratchDocument()
+        }
+
+        // The sidebar is restored last, after the document has been handed to
+        // the web view.
+        //
+        // Restoring it reads a folder listing — a synchronous directory scan and
+        // up to 200 stats — and doing that before the open call put that work
+        // directly in front of first paint for anyone who had the sidebar open
+        // last session, which persistence now makes the common case. Nothing
+        // about showing the document needs the file list.
+        if Preferences.sidebarVisible {
+            windowController.setSidebarVisible(true, animated: false)
         }
     }
 

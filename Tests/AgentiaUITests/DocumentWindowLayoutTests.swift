@@ -47,24 +47,16 @@ final class DocumentWindowLayoutTests: XCTestCase {
     /// The same rule from the other side, in the coordinates that matter: no
     /// content may sit where the traffic lights are.
     func testNothingIsLaidOutBehindTheWindowButtons() {
-        let content = window.contentView!
-        let contentInWindow = content.convert(content.bounds, to: nil)
-
-        for kind: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
-            guard let button = window.standardWindowButton(kind) else { continue }
-            let buttonInWindow = button.convert(button.bounds, to: nil)
-            XCTAssertFalse(contentInWindow.intersects(buttonInWindow),
-                           "content overlaps the \(kind) button")
-        }
+        assertClearsWindowButtons(window.contentView!, in: window)
     }
 
     /// The sidebar starts collapsed, and collapsed means zero width — not merely
     /// hidden. Its contents are a fixed 228pt wide and would otherwise paint
     /// over the document.
     func testSidebarStartsCollapsedAndClipped() {
-        let sidebar = window.contentView!.subviews.compactMap { $0 as? SidebarView }.first
-        let found = try? XCTUnwrap(sidebar)
-        guard let sidebar = found else { return }
+        guard let sidebar = window.firstDescendant(SidebarView.self) else {
+            return XCTFail("sidebar not found")
+        }
 
         XCTAssertEqual(sidebar.frame.width, 0, accuracy: 0.5)
         XCTAssertTrue(sidebar.isHidden)
@@ -85,11 +77,10 @@ final class DocumentWindowLayoutTests: XCTestCase {
     /// The editor and the web view occupy the same rectangle, so toggling
     /// between them moves nothing on screen.
     func testEditorAndWebViewShareTheSameFrame() {
-        let content = window.contentView!
-        let editor = content.subviews.compactMap { $0 as? SourceEditor }.first
-        let web = content.subviews.compactMap { $0 as? HardenedWebView }.first
-
-        guard let editor, let web else { return XCTFail("editor or web view missing") }
+        guard let editor = window.firstDescendant(SourceEditor.self),
+              let web = window.firstDescendant(HardenedWebView.self) else {
+            return XCTFail("editor or web view missing")
+        }
         XCTAssertEqual(editor.frame, web.frame)
     }
 }

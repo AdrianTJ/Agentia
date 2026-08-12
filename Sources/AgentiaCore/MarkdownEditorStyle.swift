@@ -106,7 +106,6 @@ private let openParen = UInt16(UInt8(ascii: "("))
 private let closeParen = UInt16(UInt8(ascii: ")"))
 private let bang = UInt16(UInt8(ascii: "!"))
 private let period = UInt16(UInt8(ascii: "."))
-private let rightParen = closeParen
 private let zero = UInt16(UInt8(ascii: "0"))
 private let nine = UInt16(UInt8(ascii: "9"))
 
@@ -166,9 +165,20 @@ private struct Scanner {
         var skipNext = false
 
         for (index, line) in lines.enumerated() {
+            // Cleared for every line up front, and set again only by the
+            // paragraph branch at the bottom. Each branch used to reset it
+            // before its own `continue`, which put the same statement in eight
+            // places and made "remember to reset it" a precondition for adding
+            // a ninth.
+            //
+            // Captured first because the current line still needs the previous
+            // line's answer: an indented line only starts a code block when it
+            // does not continue a paragraph.
+            let afterParagraph = previousWasParagraph
+            previousWasParagraph = false
+
             if skipNext {
                 skipNext = false
-                previousWasParagraph = false
                 continue
             }
 
@@ -182,42 +192,36 @@ private struct Scanner {
                     marker(line.lowerBound, line.count)
                     openFence = nil
                 }
-                previousWasParagraph = false
                 continue
             }
 
             if indent < 4, let fence = fenceOpening(line: line, from: contentStart) {
                 marker(line.lowerBound, line.count)
                 openFence = fence
-                previousWasParagraph = false
                 continue
             }
 
             // Blank.
             if contentStart == line.upperBound {
-                previousWasParagraph = false
                 continue
             }
 
             // An indented code block, but only where one can actually start: a
             // continuation line of a list is also indented, and styling it as
             // code would be wrong far more often than right.
-            if indent >= 4, !previousWasParagraph {
+            if indent >= 4, !afterParagraph {
                 block(line.lowerBound, line.count, .codeBlock)
-                previousWasParagraph = false
                 continue
             }
 
             if indent < 4, isThematicBreak(line: line, from: contentStart) {
                 block(line.lowerBound, line.count, .thematicBreak)
                 marker(line.lowerBound, line.count)
-                previousWasParagraph = false
                 continue
             }
 
             if indent < 4, let level = atxHeading(line: line, from: contentStart) {
                 styleATXHeading(line: line, from: contentStart, level: level)
-                previousWasParagraph = false
                 continue
             }
 
@@ -233,7 +237,6 @@ private struct Scanner {
                       .heading(level: level))
                 marker(lines[index + 1].lowerBound, lines[index + 1].count)
                 skipNext = true
-                previousWasParagraph = false
                 continue
             }
 
@@ -398,7 +401,7 @@ private struct Scanner {
                 index += 1
             }
             guard digits <= 9, index < line.upperBound,
-                  units[index] == period || units[index] == rightParen else { return nil }
+                  units[index] == period || units[index] == closeParen else { return nil }
             index += 1
         } else {
             return nil
@@ -433,7 +436,9 @@ private struct Scanner {
             span.allSatisfy { !taken[$0 - range.lowerBound] }
         }
 
-        styleCodeSpans(in: range, claim: claim, isFree: isFree)
+        // Code first, and with no `isFree` check: nothing has been claimed yet,
+        // so everything is free by construction.
+        styleCodeSpans(in: range, claim: claim)
         styleLinks(in: range, claim: claim, isFree: isFree)
 
         // Longest delimiters first: *** would otherwise be eaten as ** plus a
@@ -453,8 +458,7 @@ private struct Scanner {
     }
 
     private mutating func styleCodeSpans(in range: Range<Int>,
-                                         claim: (Range<Int>) -> Void,
-                                         isFree: (Range<Int>) -> Bool) {
+                                         claim: (Range<Int>) -> Void) {
         var index = range.lowerBound
         while index < range.upperBound {
             guard units[index] == backtick else {
@@ -497,27 +501,34 @@ private struct Scanner {
     }
 
     /// `[text](url)`, and `![alt](url)` for images.
+    ///
+    /// Bracket pairs are matched in one linear pass with a stack, rather than
+    /// each `[` scanning forward for its own partner. The scanning version was
+    /// quadratic on a line with many unmatched `[`, which a raw regex character
+    /// class or a JSON array produces easily: 100,000 of them took 4.7 seconds,
+    /// on a scan that runs on every keystroke. The stack gives the same pairs —
+    /// innermost `]` closes the nearest open `[`, exactly as depth counting did.
     private mutating func styleLinks(in range: Range<Int>,
                                      claim: (Range<Int>) -> Void,
                                      isFree: (Range<Int>) -> Bool) {
+        let partner = bracketPairs(in: range)
+
+        // The last `)` in the range. Past it no URL can be closed, so a run of
+        // trailing `[a](` costs nothing instead of a rescan each.
+        var lastCloseParen: Int?
+        var scan = range.upperBound - 1
+        while scan >= range.lowerBound {
+            if units[scan] == closeParen { lastCloseParen = scan; break }
+            scan -= 1
+        }
+
         var index = range.lowerBound
         while index < range.upperBound {
-            guard units[index] == openBracket, isFree(index..<(index + 1)) else {
-                index += 1
-                continue
-            }
-
-            var depth = 1
-            var textEnd = index + 1
-            while textEnd < range.upperBound, depth > 0 {
-                if units[textEnd] == openBracket { depth += 1 }
-                if units[textEnd] == closeBracket { depth -= 1 }
-                if depth == 0 { break }
-                textEnd += 1
-            }
-            guard depth == 0, textEnd < range.upperBound,
+            guard units[index] == openBracket, isFree(index..<(index + 1)),
+                  let textEnd = partner[index - range.lowerBound],
                   textEnd + 1 < range.upperBound,
-                  units[textEnd + 1] == openParen else {
+                  units[textEnd + 1] == openParen,
+                  let lastCloseParen, textEnd + 2 <= lastCloseParen else {
                 index += 1
                 continue
             }
@@ -539,6 +550,24 @@ private struct Scanner {
             claim(start..<(urlEnd + 1))
             index = urlEnd + 1
         }
+    }
+
+    /// For each `[` in the range, the index of the `]` that closes it.
+    ///
+    /// Indexed relative to `range.lowerBound`. Unmatched brackets get nil, which
+    /// is what makes a line of nothing but `[` cheap.
+    private func bracketPairs(in range: Range<Int>) -> [Int?] {
+        var partner = [Int?](repeating: nil, count: range.count)
+        var open: [Int] = []
+
+        for index in range {
+            if units[index] == openBracket {
+                open.append(index)
+            } else if units[index] == closeBracket, let start = open.popLast() {
+                partner[start - range.lowerBound] = index
+            }
+        }
+        return partner
     }
 
     private mutating func styleEmphasis(in range: Range<Int>,
@@ -569,8 +598,14 @@ private struct Scanner {
             }
 
             guard let closeStart = found, closeStart > index + length else {
-                index += 1
-                continue
+                // Nothing after this opener can close it — so nothing can close
+                // any *later* opener either, since each one searches a subset of
+                // what just failed, and every test applied is either positional
+                // or a claim that only ever grows. Retrying from the next
+                // character rescanned the rest of the line for each of them,
+                // which made a line of `*a *a *a …` quadratic: 100,000 of them
+                // took 30 seconds, on a scan that runs on every keystroke.
+                return
             }
 
             marker(index, length)
