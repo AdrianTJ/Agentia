@@ -88,7 +88,31 @@ swift test                            # 231 checks, green in debug and release
 node tools/webtest/run-tests.mjs      # render shell in real Chromium — 210 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 tools/make-app.sh                     # builds .build/Agentia.app
+tools/make-app.sh --install           # …and replaces /Applications/Agentia.app
 ```
+
+### Installing it
+
+`--install` is the only thing that changes the app you launch from Finder. Without it the
+bundle stays in `.build`, and the installed copy goes on running the code it was built
+from — which looks exactly like the app ignoring your changes.
+
+So that the two are tellable apart, every bundle is stamped with the commit it came from,
+and **About Agentia** shows it. From a shell:
+
+```bash
+defaults read /Applications/Agentia.app/Contents/Info AGBuildRevision
+```
+
+A revision ending in `+dirty` was built from a tree with uncommitted changes, so it
+contains code that is in no commit.
+
+`--install` refuses to run while Agentia is open, because replacing a bundle underneath a
+running process pulls its code out from under it. Quit the app first.
+
+The build is signed ad-hoc: enough to launch on the machine that built it, not enough to
+distribute. Sending it to another Mac needs a Developer ID identity, the hardened runtime,
+and notarisation — see *What is verified, and what is not*.
 
 The browser suite shells out to `.build/debug/agentia-render-cli`, so `swift build` has to
 run first. It renders through the same code the app links rather than a JavaScript
