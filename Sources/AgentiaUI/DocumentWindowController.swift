@@ -28,7 +28,7 @@ final class DocumentWindowController: NSWindowController {
     private var baselineTakenAt: String?
     private var watcher: FileWatcher?
 
-    private var mode: ViewMode = .rendered
+    private(set) var mode: ViewMode = .rendered
     private var lastScrollFraction: Double = 0
     private var blockedCount = 0
 
@@ -38,7 +38,8 @@ final class DocumentWindowController: NSWindowController {
     private var sidebarView: SidebarView?
     /// Collapsed to zero rather than hidden, so showing it is one animation.
     private var sidebarWidth: NSLayoutConstraint?
-    private var sourceEditor: SourceEditor?
+    /// Not private: the UI tests drive real typing through it.
+    private(set) var sourceEditor: SourceEditor?
     private var findBar: FindBar?
     private var findBarHeight: NSLayoutConstraint?
     /// Bumped on every search so a stale async result cannot overwrite the
@@ -82,10 +83,25 @@ final class DocumentWindowController: NSWindowController {
     private func makeWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 980, height: 720),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
+        // Deliberately NOT .fullSizeContentView.
+        //
+        // That flag extends the content view up behind the titlebar, and every
+        // subview here is pinned to the content view's own top — so the
+        // sidebar's Files/Outline control was laid out underneath the traffic
+        // lights, overlapping the close and minimise buttons. The titlebar is
+        // opaque (below), so nothing was gained by reaching under it in the
+        // first place: content up there is simply hidden.
+        //
+        // Without the flag the content view already starts below the titlebar
+        // and toolbar, which is what every constraint in makeContentView()
+        // assumes. The alternative — keeping the flag and pinning to the
+        // window's contentLayoutGuide — is the same layout with an extra
+        // ordering hazard, since those constraints are only valid once the view
+        // is installed in the window.
         window.titlebarAppearsTransparent = false
         window.titleVisibility = .hidden
         window.minSize = NSSize(width: 520, height: 380)
@@ -364,8 +380,30 @@ final class DocumentWindowController: NSWindowController {
 
     // MARK: - Rendering
 
+    /// The text the reader is actually looking at.
+    ///
+    /// `snapshot.source` is the bytes that were read from disk. The moment the
+    /// editor holds unsaved changes those are two different documents, and
+    /// everything downstream — the rendered page, the outline, the diff — wants
+    /// this one.
+    ///
+    /// Rendering the disk copy instead is what showed a scratchpad the reader
+    /// had just typed into as "This document is empty.": the file was still the
+    /// empty one `ScratchDocument.ensure` created, and their text only existed
+    /// in the editor. Switching to the rendered view is how you check what you
+    /// wrote, so this made the feature useless exactly when it was wanted.
+    ///
+    /// Safe to read unconditionally: `isDirty` is cleared on load, on save and
+    /// on discard, and `open(_:)` refuses to switch documents while it is set,
+    /// so a dirty buffer always belongs to `snapshot`.
+    var currentSource: String {
+        if let sourceEditor, sourceEditor.isDirty { return sourceEditor.text }
+        return snapshot?.source ?? ""
+    }
+
     private func render() {
         guard let snapshot, let shell, let theme else { return }
+        let source = currentSource
 
         let bootstrap = RenderShell.Bootstrap(
             diffRanges: diffRangesForCurrentMode(),
@@ -397,7 +435,8 @@ final class DocumentWindowController: NSWindowController {
             // returns rather than falling through — and it asks AgentiaCore
             // rather than deciding here, so the app and the core renderer
             // cannot disagree about which documents are served raw.
-            if let standalone = DocumentRenderer.standalonePage(for: snapshot) {
+            if let standalone = DocumentRenderer.standalonePage(for: snapshot,
+                                                               source: source) {
                 webView.load(page: standalone,
                              assetRoot: snapshot.assetRoot,
                              profile: snapshot.kind.renderProfile)
@@ -411,16 +450,16 @@ final class DocumentWindowController: NSWindowController {
                 // empty state rather than a blank page. A render failure (an
                 // oversized input, a nesting bomb) must say so rather than
                 // silently blanking the window.
-                if snapshot.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     content = emptyState("This document is empty.")
                 } else {
-                    content = (try? MarkdownRenderer.renderHTML(snapshot.source))
+                    content = (try? MarkdownRenderer.renderHTML(source))
                         ?? emptyState("This document could not be rendered.")
                 }
             case .html:
-                content = snapshot.source
+                content = source
             case .plainText:
-                content = "<pre><code>" + escapeHTML(snapshot.source) + "</code></pre>"
+                content = "<pre><code>" + escapeHTML(source) + "</code></pre>"
             }
             profile = snapshot.kind.renderProfile
         }
@@ -444,9 +483,12 @@ final class DocumentWindowController: NSWindowController {
 
     private func diffRangesForCurrentMode() -> [DiffRange]? {
         guard mode == .diff,
-              let snapshot,
+              snapshot != nil,
               let previous = previousSource else { return nil }
-        let ranges = DiffEngine.changes(from: previous, to: snapshot.source)
+        // Against the editor's text when it is dirty, for the same reason the
+        // rendered view uses it: a diff that ignores what the reader just typed
+        // is a diff of a document nobody is looking at.
+        let ranges = DiffEngine.changes(from: previous, to: currentSource)
         return ranges.isEmpty ? nil : ranges
     }
 
@@ -488,8 +530,19 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
+        setSidebarVisible(!isSidebarShowing)
+    }
+
+    /// Show or hide the sidebar.
+    ///
+    /// `animated: false` exists for the tests, which lay the window out and read
+    /// frames back synchronously — an in-flight animation would have them
+    /// measuring a sidebar that is part-way open.
+    func setSidebarVisible(_ visible: Bool, animated: Bool = true) {
         guard let sidebarWidth, let sidebarView else { return }
-        let willShow = sidebarWidth.constant == 0
+        guard visible != isSidebarShowing else { return }
+        let willShow = visible
+        Preferences.sidebarVisible = willShow
 
         if willShow {
             // Populate only on the way in — a reader who never opens it pays
@@ -498,18 +551,28 @@ final class DocumentWindowController: NSWindowController {
             sidebarView.isHidden = false
         }
 
+        let target = willShow ? SidebarView.preferredWidth : 0
+
+        // Hidden once collapsed, not merely zero-width. A zero-width table stays
+        // in the key-view loop, so a Tab could focus it and its arrow keys would
+        // swap the document with no visible sidebar to explain why.
+        let settle = { [weak self] in
+            if !willShow { self?.sidebarView?.isHidden = true }
+        }
+
+        guard animated else {
+            sidebarWidth.constant = target
+            window?.contentView?.layoutSubtreeIfNeeded()
+            settle()
+            return
+        }
+
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.15
             context.allowsImplicitAnimation = true
-            sidebarWidth.animator().constant = willShow ? SidebarView.preferredWidth : 0
+            sidebarWidth.animator().constant = target
             window?.contentView?.layoutSubtreeIfNeeded()
-        }, completionHandler: { [weak self] in
-            // Hidden once collapsed, not merely zero-width. A zero-width table
-            // stays in the key-view loop, so a Tab could focus it and its
-            // arrow keys would swap the document with no visible sidebar to
-            // explain why.
-            if !willShow { self?.sidebarView?.isHidden = true }
-        })
+        }, completionHandler: settle)
     }
 
     /// Keep the list in step with what has been opened.
@@ -590,9 +653,45 @@ final class DocumentWindowController: NSWindowController {
     var canSave: Bool { sourceEditor?.isDirty == true && snapshot != nil }
 
     private func updateSaveState() {
+        let dirty = sourceEditor?.isDirty == true
         // The dot in the close button, the way every document app shows it.
-        window?.isDocumentEdited = sourceEditor?.isDirty == true
+        window?.isDocumentEdited = dirty
+        holdTermination(dirty)
     }
+
+    /// Whether the process is currently holding off termination. Both
+    /// ProcessInfo calls are counted, so this has to be balanced exactly.
+    private(set) var isHoldingTermination = false
+
+    /// Stop macOS from killing the process outright while there are unsaved
+    /// edits.
+    ///
+    /// Info.plist opts into both sudden and automatic termination — which was
+    /// free when this app could only display documents, and is not now that it
+    /// holds text that exists nowhere else. Sudden termination is a promise that
+    /// the process can be SIGKILLed at any moment; nothing runs when it is
+    /// taken up, so `applicationShouldTerminate` never asks about unsaved edits
+    /// and the buffer is simply gone. The reader's evidence would be an app that
+    /// vanished, with no crash report, because from the system's point of view
+    /// nothing went wrong.
+    ///
+    /// These two calls are the API for exactly this, and the keys stay on: a
+    /// viewer with nothing unsaved *should* be cheap for the system to reclaim.
+    private func holdTermination(_ hold: Bool) {
+        guard hold != isHoldingTermination else { return }
+        isHoldingTermination = hold
+
+        let process = ProcessInfo.processInfo
+        if hold {
+            process.disableSuddenTermination()
+            process.disableAutomaticTermination(Self.terminationReason)
+        } else {
+            process.enableSuddenTermination()
+            process.enableAutomaticTermination(Self.terminationReason)
+        }
+    }
+
+    private static let terminationReason = "unsaved edits"
 
     @objc func saveDocument(_ sender: Any?) {
         guard let snapshot, let sourceEditor, sourceEditor.isDirty else { return }
@@ -1031,7 +1130,7 @@ extension DocumentWindowController: NSWindowDelegate {
     /// has explicitly chosen to lose them.
     func discardEdits() {
         sourceEditor?.markSaved()
-        window?.isDocumentEdited = false
+        updateSaveState()
     }
 }
 

@@ -37,9 +37,28 @@ directly through its C API — there is no intermediate shim to keep in step.
 | Layer | Path | What it does |
 | --- | --- | --- |
 | Core | `Sources/AgentiaCore/` | cmark-gfm driving, GFM extensions, footnotes, source positions, page assembly, themes, diff engine, asset-path validation |
-| App | `Sources/Agentia/` | AppKit shell, hardened web view, `artifact://` handler, FSEvents watcher, PDF export |
+| App UI | `Sources/AgentiaUI/` | AppKit shell, hardened web view, `artifact://` handler, FSEvents watcher, PDF export |
+| App | `Sources/Agentia/` | The executable. Four lines that start `AgentiaUI` |
 | Shell | `Sources/AgentiaCore/Resources/` | HTML template, base CSS, pinned script, six themes |
 | CLI | `Sources/agentia-render-cli/` | Drives the renderer from a terminal, so the browser suite tests the code the app ships |
+
+## Editing
+
+The editor holds Markdown and styles it in place: headings at heading size, `**bold**`
+actually bold, code in a monospace face, and the markers themselves dimmed so they recede
+without disappearing. The file written back is byte-for-byte what was typed.
+
+Making the *rendered* HTML editable was the obvious alternative and was rejected. It means
+converting HTML back to Markdown on every save, and that conversion normalises the whole
+document — list markers, heading style, line wrapping — not just the part that was edited.
+For an app whose premise is showing what an agent changed since the last run, a save that
+reformats every line makes the diff worthless.
+
+`MarkdownEditorStyle` is deliberately not a parser and must never be asked to agree with
+cmark on edge cases: it runs on every keystroke, usually on text that is mid-word and not
+valid Markdown yet. The rendered view remains the source of truth for what a document
+*means*. Markers stay visible rather than being hidden when the caret leaves them — hiding
+them reflows the text as the caret moves, and you cannot delete a `**` you cannot see.
 
 ## Security model
 
@@ -84,11 +103,35 @@ layer.
 
 ```bash
 swift build                           # core, app, and the render CLI
-swift test                            # 231 checks, green in debug and release
+swift test                            # 296 checks, green in debug and release
 node tools/webtest/run-tests.mjs      # render shell in real Chromium — 210 checks
 python3 tools/verify-diff-vectors.py  # diff reference implementation — 15 vectors
 tools/make-app.sh                     # builds .build/Agentia.app
+tools/make-app.sh --install           # …and replaces /Applications/Agentia.app
 ```
+
+### Installing it
+
+`--install` is the only thing that changes the app you launch from Finder. Without it the
+bundle stays in `.build`, and the installed copy goes on running the code it was built
+from — which looks exactly like the app ignoring your changes.
+
+So that the two are tellable apart, every bundle is stamped with the commit it came from,
+and **About Agentia** shows it. From a shell:
+
+```bash
+defaults read /Applications/Agentia.app/Contents/Info AGBuildRevision
+```
+
+A revision ending in `+dirty` was built from a tree with uncommitted changes, so it
+contains code that is in no commit.
+
+`--install` refuses to run while Agentia is open, because replacing a bundle underneath a
+running process pulls its code out from under it. Quit the app first.
+
+The build is signed ad-hoc: enough to launch on the machine that built it, not enough to
+distribute. Sending it to another Mac needs a Developer ID identity, the hardened runtime,
+and notarisation — see *What is verified, and what is not*.
 
 The browser suite shells out to `.build/debug/agentia-render-cli`, so `swift build` has to
 run first. It renders through the same code the app links rather than a JavaScript
@@ -107,8 +150,26 @@ Being honest about this matters more than looking finished.
 | Parsing core | **Tested.** 51 checks: CommonMark, every GFM extension, source positions, front matter, structural neutralisation, nesting caps, edge cases, throughput, pathological input |
 | Render shell, themes, print CSS | **Tested in a real browser.** 210 checks including CSP enforcement, navigation containment, print-overflow measurement and PDF content extraction |
 | Diff engine | **Algorithm verified** via a Python transcription run against 15 hand-checked vectors, plus XCTest |
-| AgentiaCore Swift | **Tested.** 231 XCTest cases, run in both debug and release |
-| macOS app layer | **Partly tested.** The navigation guard moved into AgentiaCore so it could be; the rest is AppKit and WebKit wiring, verified by use |
+| AgentiaCore Swift | **Tested.** 259 XCTest cases, run in both debug and release |
+| macOS app layer | **Partly tested.** 37 XCTest cases over window layout, view modes, editor styling and the sidebar's list. The rest is WebKit wiring, verified by use |
+
+The app layer had none of that until a build shipped with the sidebar drawn on top of the
+traffic lights and the rendered view showing a freshly-typed document as empty — both plain
+logic, neither catchable, because the whole AppKit layer lived in an executable target with
+`@main` and no test bundle can import one. Splitting `AgentiaUI` out of the executable is
+what made those cases possible.
+
+Layout is asserted, not eyeballed: the tests build a real window, run Auto Layout, and check
+that no content intersects the window buttons. They never call `showWindow`, so running the
+suite steals nobody's focus.
+
+Assertions still cannot say whether the result *looks* right, and trusting logs over pixels
+is exactly how the overlap shipped. For appearance, capture the running app's own window —
+no screen recording of anything else, and no accessibility APIs:
+
+```bash
+screencapture -o -x -l$(tools/window-id.swift) shot.png
+```
 
 Two harnesses exist to keep implementations that must agree from drifting:
 

@@ -37,9 +37,18 @@ let package = Package(
                 .copy("Resources/themes"),
             ]
         ),
+        // The AppKit layer: window, toolbar, sidebar, editor, web view. A
+        // library rather than part of the executable, because a test bundle
+        // cannot import an executable target with @main — which is how the
+        // sidebar came to be laid out underneath the traffic lights with a
+        // full green suite.
+        .target(
+            name: "AgentiaUI",
+            dependencies: ["AgentiaCore"]
+        ),
         .executableTarget(
             name: "Agentia",
-            dependencies: ["AgentiaCore"],
+            dependencies: ["AgentiaUI"],
             // Consumed by tools/make-app.sh when assembling the bundle, not
             // SwiftPM resources.
             exclude: ["Info.plist", "Agentia.icns"]
@@ -54,6 +63,10 @@ let package = Package(
             resources: [
                 .copy("Fixtures"),
             ]
+        ),
+        .testTarget(
+            name: "AgentiaUITests",
+            dependencies: ["AgentiaUI"]
         ),
     ]
 )
