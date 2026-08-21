@@ -92,10 +92,6 @@ public enum SyntaxHighlighter {
         return render(tokenise(code, with: spec), of: code, maxOutputBytes: maxOutputBytes)
     }
 
-    public static func supports(_ language: String) -> Bool {
-        Language.spec(for: language) != nil
-    }
-
     // MARK: - Tokenising
 
     struct Span: Equatable {

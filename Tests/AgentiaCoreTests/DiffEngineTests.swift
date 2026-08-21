@@ -112,7 +112,7 @@ final class DiffEngineTests: XCTestCase {
         XCTAssertEqual(ranges.count, 1)
         XCTAssertEqual(ranges.first?.kind, .modified)
         XCTAssertEqual(ranges.first?.start, DiffEngine.quadraticLimit + 1)
-        XCTAssertEqual(ranges.first?.lineCount, 1,
+        XCTAssertEqual(ranges.first?.end, DiffEngine.quadraticLimit + 1,
                        "trimming should isolate the single changed line")
     }
 

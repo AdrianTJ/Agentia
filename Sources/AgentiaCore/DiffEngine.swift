@@ -23,8 +23,6 @@ public struct DiffRange: Sendable, Equatable, Codable {
         self.end = end
         self.kind = kind
     }
-
-    public var lineCount: Int { end - start + 1 }
 }
 
 /// Line-level diff between two revisions of a document.

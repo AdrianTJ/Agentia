@@ -3,6 +3,8 @@
 A fast, minimalist macOS reader for Markdown and HTML — built for reviewing the artifacts
 that coding agents leave behind.
 
+Free, open-source software under the [Apache License 2.0](LICENSE).
+
 Not a note-taker (Obsidian owns that). Not an IDE (VS Code owns that). A place to open a
 generated file, read it, see what changed since the last run, export it well, and push it
 somewhere useful.
@@ -133,6 +135,32 @@ The build is signed ad-hoc: enough to launch on the machine that built it, not e
 distribute. Sending it to another Mac needs a Developer ID identity, the hardened runtime,
 and notarisation — see *What is verified, and what is not*.
 
+### Releasing
+
+Agentia is free, open-source software distributed as signed release builds from GitHub
+Releases; there is no paid tier and no licensing code.
+
+The plumbing for that is already in place:
+
+- **Updates** — Sparkle 2 is linked and wired. It stays inert until `Info.plist` carries an
+  `SUFeedURL`; when one is present the app menu gains **Check for Updates…**. To go live:
+  generate Ed25519 keys with Sparkle's `generate_keys` tool, add `SUPublicEDKey` and the
+  feed URL to `Info.plist`, publish an appcast beside each tagged release (Sparkle's
+  `sign_update` signs each archive), and host the appcast on GitHub Pages or in the repo.
+- **Crash data** — MetricKit payloads are logged and archived under
+  `~/Library/Application Support/Agentia/diagnostics` (newest 20 kept). Nothing is uploaded;
+  users attach files to bug reports by hand.
+- **Signing + notarisation** — once a Developer ID identity exists:
+
+  ```bash
+  xcrun notarytool store-credentials agentia-notary   # once per machine
+  SIGN_IDENTITY="Developer ID Application: NAME (TEAMID)" \
+  NOTARY_PROFILE=agentia-notary \
+    tools/make-app.sh
+  ```
+
+  Without those variables the script behaves exactly as before (ad-hoc).
+
 The browser suite shells out to `.build/debug/agentia-render-cli`, so `swift build` has to
 run first. It renders through the same code the app links rather than a JavaScript
 reimplementation that could drift.
@@ -236,12 +264,6 @@ open -a .build/Agentia.app report.md
 | 250–450 ms | Proceed; trim frameworks and defer non-essential init |
 | over ~450 ms | Ship a Quick Look extension for the instant peek; the app becomes the deliberate open |
 
-## Picking this up
-
-If you are continuing this work — especially on a Mac, where the Swift can finally be
-compiled — start with [`HANDOFF.md`](HANDOFF.md). It covers the compile errors to expect
-first, the invariants that must not be broken, and the task order.
-
 ## Design documents
 
 | Document | What's in it |
@@ -290,7 +312,7 @@ Recording why, so nobody re-derives it:
 | --- | --- |
 | Quick Look extension | SwiftPM builds only `executable` and `library` products — there is no app-extension product type, so this needs an Xcode project. It is also no longer forced: the measured ~436 ms launch sits inside the "proceed as designed" band rather than past it, so Quick Look is a nice-to-have, not the fallback the original plan made it |
 | App Intents | Intents are registered by an Xcode build phase that extracts metadata at compile time. Without it the definitions compile and never appear in Shortcuts |
-| Notarisation and Sparkle | Needs a Developer ID certificate. `security find-identity -v -p codesigning` reports 0 valid identities here, so the app is ad-hoc signed and cannot be notarised from this machine |
+| Notarisation and Sparkle | Sparkle is wired and ships inert; it activates the moment `Info.plist` carries an `SUFeedURL`. Notarisation needs a Developer ID certificate — `security find-identity -v -p codesigning` reports 0 valid identities here, so builds are ad-hoc signed. When an Apple Developer Program membership exists, `tools/make-app.sh` already knows the rest: set `SIGN_IDENTITY` for Developer ID + hardened runtime signing and `NOTARY_PROFILE` (a `notarytool store-credentials` profile) to notarise and staple |
 | Mermaid and KaTeX | Not blocked, just expensive and unresolved. Both are megabytes of vendored JavaScript, and the markdown profile pins `script-src` to one hash — so each needs a second pinned hash and a per-document opt-in, which is a security surface worth designing rather than bolting on |
 
 Folder mode is built: the sidebar lists the documents beside the one being read, newest

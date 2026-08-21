@@ -4,20 +4,14 @@ import CryptoKit
 /// Locates the shell and theme resources inside the module bundle.
 public enum ResourceBundle {
 
-    /// Overridable so tests and command-line tools can point at the repository
-    /// copy instead of a built module bundle.
-    public static var override: URL?
-
     private static var base: Bundle { Bundle.module }
 
     public static var shellDirectory: URL? {
-        if let root = override { return root.appendingPathComponent("shell", isDirectory: true) }
-        return base.url(forResource: "shell", withExtension: nil)
+        base.url(forResource: "shell", withExtension: nil)
     }
 
     public static var themesDirectory: URL? {
-        if let root = override { return root.appendingPathComponent("themes", isDirectory: true) }
-        return base.url(forResource: "themes", withExtension: nil)
+        base.url(forResource: "themes", withExtension: nil)
     }
 }
 
