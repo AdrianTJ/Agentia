@@ -48,7 +48,10 @@ export function contentSecurityPolicy(profile, scriptHash) {
   const scriptSrc =
     profile === Profile.htmlArtifact
       ? "'unsafe-inline' 'unsafe-eval'"
-      : `'${scriptHash}'`;
+      // artifact://__agentia__ is the vendored-resource host (KaTeX). It is
+      // unconditional so pages stay byte-stable regardless of math use;
+      // shell.js loads those scripts only on the bootstrap flag.
+      : `'${scriptHash}' artifact://__agentia__`;
 
   return [
     "default-src 'none'",
@@ -109,7 +112,12 @@ export function neutraliseClosingScriptTags(json) {
 }
 
 export function bootstrapJSON(config) {
-  return neutraliseClosingScriptTags(JSON.stringify(config ?? {}));
+  // Mirror Swift's JSONEncoder .sortedKeys so both implementations emit
+  // identical bytes for the same data regardless of property order.
+  const source = config ?? {};
+  const sorted = {};
+  for (const key of Object.keys(source).sort()) sorted[key] = source[key];
+  return neutraliseClosingScriptTags(JSON.stringify(sorted));
 }
 
 /**
@@ -149,6 +157,10 @@ export function buildPage({
     BOOTSTRAP_JSON: bootstrapJSON(bootstrap),
     CONTENT: content,
     SHELL_JS: js,
+    KATEX_CSS:
+      bootstrap && bootstrap.math === true
+        ? '<link rel="stylesheet" href="artifact://__agentia__/katex/katex.min.css">'
+        : "",
   };
 
   return substitute(template, values);

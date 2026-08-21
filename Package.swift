@@ -38,6 +38,7 @@ let package = Package(
             resources: [
                 .copy("Resources/shell"),
                 .copy("Resources/themes"),
+                .copy("Resources/katex"),
             ]
         ),
         // The AppKit layer: window, toolbar, sidebar, editor, web view. A

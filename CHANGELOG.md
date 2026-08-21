@@ -8,6 +8,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- Math rendering via vendored KaTeX 0.16.22. Documents containing `$$…$$`,
+  `\(…\)`, `\[…\]` or `\begin{…}` blocks get typeset math; currency and code
+  blocks are untouched (no single-`$` delimiter). KaTeX ships inside the app
+  bundle and is served over the `artifact://` scheme — no network is ever
+  contacted, the CSP keeps `connect-src 'none'`, and injection only happens
+  when the host detects math-shaped delimiters. A new Settings checkbox
+  (default on) turns rendering off.
 - Sparkle 2 auto-update framework, wired but inert until an `SUFeedURL` is
   configured in `Info.plist` (see README, "Releasing"). Adds a
   "Check for Updates…" item (⌘U) to the app menu when a feed is present.

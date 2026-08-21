@@ -120,6 +120,9 @@ public struct AssetResolver: Sendable {
         case "ttf":            return "font/ttf"
         case "otf":            return "font/otf"
         case "css":            return "text/css; charset=utf-8"
+        // With X-Content-Type-Options: nosniff, WebKit refuses to execute a
+        // script served as anything else, so the vendored JS needs real types.
+        case "js", "mjs":      return "text/javascript; charset=utf-8"
         case "mp4":            return "video/mp4"
         case "webm":           return "video/webm"
         case "mp3":            return "audio/mpeg"

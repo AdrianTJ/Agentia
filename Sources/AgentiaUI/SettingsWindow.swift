@@ -54,6 +54,7 @@ final class SettingsWindowController: NSWindowController {
     private var sizeSlider: NSSlider!
     private var sizeLabel: NSTextField!
     private var sample: NSTextField!
+    private var mathCheck: NSButton!
 
     init(themes: [Theme], onChange: @escaping (String, Double) -> Void) {
         self.themes = themes
@@ -104,10 +105,14 @@ final class SettingsWindowController: NSWindowController {
         sample = NSTextField(labelWithString: "The quick brown fox")
         sample.textColor = .labelColor
 
+        mathCheck = NSButton(checkboxWithTitle: "Render math ($$…$$, \\[…\\])",
+                             target: self, action: #selector(mathChanged))
+
         let grid = NSGridView(views: [
             [label("Theme"), themeList],
             [label("Text size"), sizeRow()],
             [NSGridCell.emptyContentView, sample],
+            [NSGridCell.emptyContentView, mathCheck],
         ])
         grid.rowSpacing = 18
         grid.columnSpacing = 14
@@ -153,6 +158,7 @@ final class SettingsWindowController: NSWindowController {
         let step = Preferences.fontScaleSteps.enumerated()
             .min { abs($0.element - scale) < abs($1.element - scale) }?.offset ?? 3
         sizeSlider.doubleValue = Double(step) / Double(Preferences.fontScaleSteps.count - 1)
+        mathCheck.state = Preferences.renderMath ? .on : .off
         updateSample()
     }
 
@@ -180,6 +186,13 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func sizeChanged() {
         updateSample()
+        apply(themeID: Preferences.themeID, scale: selectedScale)
+    }
+
+    @objc private func mathChanged() {
+        // Routed through apply so the document re-renders with the flag read
+        // fresh at assembly time — no extra notification path needed.
+        Preferences.renderMath = mathCheck.state == .on
         apply(themeID: Preferences.themeID, scale: selectedScale)
     }
 

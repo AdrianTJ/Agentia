@@ -75,6 +75,19 @@ final class ArtifactSchemeHandler: NSObject, WKURLSchemeHandler {
             serveAsset(String(encodedPath.dropFirst()),
                        resolver: payload.resolver, to: task, url: url)
 
+        case "__agentia__":
+            // Vendored app resources (KaTeX). Same resolver containment as
+            // document assets, rooted at the bundle folder: a page can read
+            // only what we ship, never the filesystem around it.
+            let encodedPath = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .percentEncodedPath ?? url.path
+            guard let katexRoot = ResourceBundle.katexDirectory else {
+                task.didFailWithError(Failure.assetUnavailable)
+                return
+            }
+            serveAsset(String(encodedPath.dropFirst()),
+                       resolver: AssetResolver(root: katexRoot), to: task, url: url)
+
         default:
             task.didFailWithError(Failure.unknownHost)
         }

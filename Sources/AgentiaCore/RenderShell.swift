@@ -13,6 +13,11 @@ public enum ResourceBundle {
     public static var themesDirectory: URL? {
         base.url(forResource: "themes", withExtension: nil)
     }
+
+    /// Vendored KaTeX distribution, served to pages that opt into math.
+    public static var katexDirectory: URL? {
+        base.url(forResource: "katex", withExtension: nil)
+    }
 }
 
 /// Assembles a complete, self-contained HTML page from a rendered fragment.
@@ -40,15 +45,21 @@ public struct RenderShell: Sendable {
         /// When the baseline was taken, already formatted for display — the
         /// page must not be handed a locale or a date to reason about.
         public var diffSince: String?
+        /// True lets shell.js load the vendored KaTeX scripts and render
+        /// math. The host decides — detection plus the user's setting — so
+        /// the page itself cannot switch scripting on.
+        public var math: Bool?
 
         public init(
             diffRanges: [DiffRange]? = nil,
             scrollFraction: Double? = nil,
-            diffSince: String? = nil
+            diffSince: String? = nil,
+            math: Bool? = nil
         ) {
             self.diffRanges = diffRanges
             self.scrollFraction = scrollFraction
             self.diffSince = diffSince
+            self.math = math
         }
 
         public static let empty = Bootstrap()
@@ -152,7 +163,13 @@ public struct RenderShell: Sendable {
         let scriptSource: String
         switch profile {
         case .markdown:
-            scriptSource = "'\(scriptHash)'"
+            // artifact://__agentia__ is the vendored-resource host (KaTeX).
+            // It is in the allowlist unconditionally so pages stay
+            // byte-stable whether or not a document uses math — shell.js
+            // only ever loads those scripts when the bootstrap flag says to,
+            // and the host decides that flag. The scripts themselves are
+            // byte-stable bundle contents, never document data.
+            scriptSource = "'\(scriptHash)' artifact://__agentia__"
         case .htmlArtifact:
             // A self-contained artifact is worthless if its own chart code
             // cannot run. Containment comes from connect-src and the host's
@@ -253,6 +270,9 @@ public struct RenderShell: Sendable {
             "BOOTSTRAP_JSON": Self.bootstrapJSON(bootstrap),
             "CONTENT": content,
             "SHELL_JS": js,
+            "KATEX_CSS": bootstrap.math == true
+                ? "<link rel=\"stylesheet\" href=\"artifact://__agentia__/katex/katex.min.css\">"
+                : "",
         ]
 
         return Self.substitute(template, values)

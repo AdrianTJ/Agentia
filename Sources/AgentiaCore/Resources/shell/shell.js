@@ -323,6 +323,43 @@
     });
   }
 
+  /* ---------- math ---------- */
+
+  /* KaTeX is vendored in the app bundle and served from the artifact scheme's
+     __agentia__ host — never the network. The host decides whether a page
+     gets math at all: config.math is set by the app only when the document
+     contains math-shaped delimiters and the user has not turned rendering
+     off. In a plain browser (the test suite) the load simply fails and math
+     stays literal text. */
+  function loadScript(src, onload) {
+    var script = document.createElement("script");
+    script.src = src;
+    script.onload = onload;
+    document.head.appendChild(script);
+  }
+
+  function renderMath() {
+    if (!config.math) return;
+    var base = "artifact://__agentia__/katex/";
+    loadScript(base + "katex.min.js", function () {
+      loadScript(base + "contrib/auto-render.min.js", function () {
+        if (!window.katex || !window.renderMathInElement) return;
+        /* The delimiters mirror MathDetection.swift and auto-render's own
+           defaults: no single-$ delimiter, so currency never becomes math. */
+        window.renderMathInElement(doc, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true }
+          ],
+          throwOnError: false
+        });
+        /* ponytail: scroll was already restored before layout grew; math
+           pages may land slightly off — re-anchor if that ever matters */
+      });
+    });
+  }
+
   /* ---------- go ---------- */
 
   wrapTables();
@@ -333,6 +370,7 @@
   interceptLinks();
   watchScroll();
   restoreScroll(config.scrollFraction);
+  renderMath();
 
   post({
     type: "ready",

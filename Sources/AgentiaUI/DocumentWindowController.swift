@@ -411,7 +411,11 @@ final class DocumentWindowController: NSWindowController {
         let bootstrap = RenderShell.Bootstrap(
             diffRanges: diffRanges(against: source),
             scrollFraction: lastScrollFraction,
-            diffSince: mode == .diff ? baselineTakenAt : nil
+            diffSince: mode == .diff ? baselineTakenAt : nil,
+            // The host decides whether the page may render math: the
+            // document must contain math-shaped delimiters and the user
+            // must not have switched rendering off.
+            math: Preferences.renderMath && MathDetection.present(in: source)
         )
 
         let content: String

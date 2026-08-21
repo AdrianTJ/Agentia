@@ -39,6 +39,14 @@ enum Preferences {
         }
     }
 
+    /// Whether documents that contain math may run the vendored KaTeX
+    /// renderer. Default on: detection is conservative and KaTeX is vendored,
+    /// hash-pinned and network-free.
+    static var renderMath: Bool {
+        get { defaults.object(forKey: "renderMath") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "renderMath") }
+    }
+
     /// Whether the sidebar was open when the app was last used.
     ///
     /// A reader who opens the file list is navigating a folder, and having to
