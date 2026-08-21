@@ -57,18 +57,6 @@ final class ThemeStoreTests: XCTestCase {
         }
     }
 
-    func testLoadingUnknownThemeThrows() throws {
-        let store = try ThemeStore.bundled()
-        XCTAssertThrowsError(try store.load(id: "no-such-theme"))
-    }
-
-    func testThemeIdCannotEscapeTheThemeDirectory() throws {
-        // Theme ids arrive from persisted preferences, so they are untrusted.
-        let store = try ThemeStore.bundled()
-        for hostile in ["../../etc", "..", ".", "a/b", "a\\b", ""] {
-            XCTAssertThrowsError(try store.load(id: hostile), "should reject '\(hostile)'")
-        }
-    }
 }
 
 final class DocumentKindTests: XCTestCase {
@@ -116,7 +104,8 @@ final class DocumentRendererTests: XCTestCase {
     }
 
     private func makeTheme() throws -> Theme {
-        try ThemeStore.bundled().load(id: "report")
+        let themes = try ThemeStore.bundled().loadAll()
+        return try XCTUnwrap(themes.first { $0.id == "report" })
     }
 
     private func write(_ contents: String, named name: String) throws -> URL {

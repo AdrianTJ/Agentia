@@ -67,7 +67,8 @@ final class RenderShellTests: XCTestCase {
     }
 
     private func makeTheme() throws -> Theme {
-        try ThemeStore.bundled().load(id: "manuscript")
+        let themes = try ThemeStore.bundled().loadAll()
+        return try XCTUnwrap(themes.first { $0.id == "manuscript" })
     }
 
     // MARK: - Parity with the JavaScript implementation

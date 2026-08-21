@@ -103,22 +103,6 @@ public struct ThemeStore: Sendable {
         }
     }
 
-    public func load(id: String) throws -> Theme {
-        // Reject anything that could escape the theme directory. Theme ids
-        // reach here from persisted preferences, so treat them as untrusted.
-        guard !id.isEmpty,
-              !id.contains("/"),
-              !id.contains("\\"),
-              id != ".", id != ".."
-        else { throw Error.themeNotFound(id) }
-
-        let folder = directory.appendingPathComponent(id, isDirectory: true)
-        guard FileManager.default.fileExists(atPath: folder.path) else {
-            throw Error.themeNotFound(id)
-        }
-        return try load(at: folder)
-    }
-
     private func load(at folder: URL) throws -> Theme {
         let id = folder.lastPathComponent
 

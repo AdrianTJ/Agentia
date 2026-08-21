@@ -71,7 +71,7 @@ final class SyntaxHighlighterTests: XCTestCase {
     func testUnknownLanguageIsLeftAlone() {
         XCTAssertNil(SyntaxHighlighter.highlight("+[->+<]", language: "brainfuck"))
         XCTAssertNil(SyntaxHighlighter.highlight("x", language: ""))
-        XCTAssertFalse(SyntaxHighlighter.supports("cobol"))
+        XCTAssertNil(SyntaxHighlighter.highlight("x", language: "cobol"))
     }
 
     func testTokensAreClassified() {
