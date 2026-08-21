@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 import os
+import Sparkle
 import AgentiaCore
 
 /// Launch instrumentation for the Phase 0 measurement.
@@ -73,6 +74,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var openWithMenuDelegate: OpenWithMenu?
     private var themeMenuDelegate: ThemeMenu?
 
+    /// Auto-updates via Sparkle. Created only when Info.plist carries an
+    /// SUFeedURL — without a release channel there is nothing to check, and a
+    /// controller started without one just logs errors on every launch.
+    private var updateController: SPUStandardUpdaterController?
+
     static func main() {
         Launch.processStart = Date()
         let app = NSApplication.shared
@@ -104,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Launch.mark("didFinishLaunching")
+        MetricsReporter.start()
         installMenu()
 
         windowController.showWindow(nil)
@@ -225,6 +232,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "Settings…",
                         action: #selector(DocumentWindowController.showSettings(_:)),
                         keyEquivalent: ",")
+        if Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil {
+            updateController = SPUStandardUpdaterController(
+                startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+            appMenu.addItem(withTitle: "Check for Updates…",
+                            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                            // ⌘U (Sparkle's usual) is taken by Toggle Source.
+                            keyEquivalent: "")
+        }
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Agentia",
                         action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")

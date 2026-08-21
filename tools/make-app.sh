@@ -9,6 +9,18 @@
 #
 #   tools/make-app.sh [debug|release] [--install]     default: release
 #
+# Release signing, once an Apple Developer identity exists:
+#
+#   SIGN_IDENTITY="Developer ID Application: NAME (TEAMID)" \
+#   NOTARY_PROFILE=agentia-notary \
+#     tools/make-app.sh
+#
+# SIGN_IDENTITY switches from ad-hoc to a real Developer ID signature with the
+# hardened runtime. NOTARY_PROFILE names a credential profile stored with
+# `xcrun notarytool store-credentials`; when set, the bundle is submitted,
+# awaited and stapled. Either variable alone is fine: signing without
+# notarisation still clears Gatekeeper for machines that skip the warning.
+#
 # --install replaces /Applications/Agentia.app with what was just built. Without
 # it the bundle stays in .build, and a copy installed earlier keeps running the
 # code it was built from — which reads as "the app ignored my changes".
@@ -107,12 +119,36 @@ for bundle in "$BIN_DIR"/*.bundle; do
   cp -R "$bundle" "$APP/Contents/Resources/"
 done
 
-# Ad-hoc signature: enough for local launching. A distributed build needs a
-# Developer ID identity, the hardened runtime, and notarisation.
-echo "==> signing (ad-hoc)"
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || {
-  echo "   ad-hoc signing failed; the app may still run locally" >&2
-}
+# Ad-hoc signature by default: enough for local launching. With SIGN_IDENTITY
+# set, sign as Developer ID with the hardened runtime instead; with
+# NOTARY_PROFILE also set, notarise and staple so Gatekeeper opens silently.
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+  echo "==> signing ($SIGN_IDENTITY, hardened runtime)"
+  codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" "$APP" || {
+    echo "   Developer ID signing failed" >&2
+    exit 1
+  }
+else
+  echo "==> signing (ad-hoc)"
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || {
+    echo "   ad-hoc signing failed; the app may still run locally" >&2
+  }
+fi
+
+if [ -n "${NOTARY_PROFILE:-}" ]; then
+  if [ -z "${SIGN_IDENTITY:-}" ]; then
+    echo "NOTARY_PROFILE without SIGN_IDENTITY: Apple rejects unsigned uploads" >&2
+    exit 1
+  fi
+  ZIP="$ROOT/.build/Agentia-notarize.zip"
+  ditto -c -k --keepParent "$APP" "$ZIP"
+  xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait || {
+    echo "   notarisation failed; see 'xcrun notarytool log' output above" >&2
+    exit 1
+  }
+  xcrun stapler staple "$APP"
+  rm -f "$ZIP"
+fi
 
 # Register with Launch Services so "Open With" sees it without a logout.
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"

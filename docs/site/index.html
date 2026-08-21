@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentia — a reader for what your coding agent wrote</title>
+<meta name="description" content="A fast, minimalist macOS reader for the Markdown and HTML artifacts that coding agents leave behind. Free and open source.">
+<style>
+  :root {
+    --ink: #1a1a1e; --paper: #faf9f7; --accent: #b3541e; --muted: #6b6960;
+    --line: #e4e1db;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font: 17px/1.65 -apple-system, "Helvetica Neue", sans-serif;
+    color: var(--ink); background: var(--paper);
+    max-width: 42rem; margin: 0 auto; padding: 4rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2.2rem; line-height: 1.15; letter-spacing: -0.02em; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .tagline { font-size: 1.25rem; color: var(--muted); margin-top: 0.75rem; }
+  .cta { margin-top: 2rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+  .button {
+    display: inline-block; padding: 0.7rem 1.4rem; border-radius: 8px;
+    background: var(--ink); color: var(--paper); text-decoration: none; font-weight: 600;
+  }
+  .button.secondary { background: none; color: var(--ink); border: 1px solid var(--line); }
+  .note { font-size: 0.85rem; color: var(--muted); }
+  section { margin-top: 3.5rem; }
+  h2 { font-size: 1.15rem; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
+  ul { padding-left: 1.2rem; margin-top: 0.75rem; }
+  li { margin-top: 0.5rem; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em; background: #efece7; padding: 0.1em 0.35em; border-radius: 4px; }
+  footer { margin-top: 5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Agentia is a <em>reader</em> for what your coding agent wrote.</h1>
+<p class="tagline">A fast, minimalist macOS app for opening the Markdown and HTML
+artifacts agents leave behind — reading them, seeing what changed since the last
+run, exporting them well.</p>
+
+<div class="cta">
+  <!-- TODO: point at the first tagged GitHub release when one exists -->
+  <a class="button" href="https://github.com/AdrianTJ/Agentia/releases">Download for macOS 13+</a>
+  <a class="button secondary" href="https://github.com/AdrianTJ/Agentia">Source on GitHub</a>
+</div>
+<p class="note">Free, open source (Apache 2.0), no telemetry leaves your machine.
+Notarized builds are planned; until then macOS may ask you to approve the app
+in System Settings → Privacy &amp; Security on first launch.</p>
+
+<section>
+  <h2>Why it exists</h2>
+  <ul>
+    <li><strong>Built for agent output.</strong> Not a note-taker, not an IDE.
+    A place to open a generated file and judge it.</li>
+    <li><strong>Live diff.</strong> Reopen a document an agent rewrote and the
+    new blocks light up — you see what changed, not the whole page.</li>
+    <li><strong>Contained by design.</strong> Agent-written HTML is unreviewed
+    code. Three independent mechanisms keep it off the network and off your
+    clipboard.</li>
+    <li><strong>Honest editing.</strong> Markdown is edited in place,
+    byte-for-byte — a save never reformats the document out from under the
+    diff.</li>
+    <li><strong>Fast.</strong> Parsing happens in-process with cmark-gfm; the
+    web view receives finished HTML. Double-click to paint is measured, not
+    assumed.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Privacy</h2>
+  <p>Agentia has no accounts, no analytics and no network access of its own.
+  Crash diagnostics Apple sends back through MetricKit stay in
+  <code>~/Library/Application Support/Agentia/</code>.</p>
+</section>
+
+<footer>
+  <p>Agentia · free under the Apache License 2.0 ·
+  <a href="https://github.com/AdrianTJ/Agentia/issues">Report an issue</a></p>
+</footer>
+
+</body>
+</html>

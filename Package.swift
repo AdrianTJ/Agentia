@@ -24,6 +24,9 @@ let package = Package(
         // footnote backref that AgentiaCore repairs — see the workaround
         // comment on FootnoteBackref in MarkdownPostProcessing.swift.
         .package(url: "https://github.com/swiftlang/swift-cmark.git", branch: "gfm"),
+        // Auto-update framework for direct distribution. Inert until Info.plist
+        // carries an SUFeedURL; see README, "Releasing".
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
         .target(
@@ -44,7 +47,7 @@ let package = Package(
         // full green suite.
         .target(
             name: "AgentiaUI",
-            dependencies: ["AgentiaCore"]
+            dependencies: ["AgentiaCore", "Sparkle"]
         ),
         .executableTarget(
             name: "Agentia",
