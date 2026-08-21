@@ -2,12 +2,14 @@ import Foundation
 import MetricKit
 import os
 
-/// Receives Apple's MetricKit payloads and keeps the useful part.
+/// Receives Apple's MetricKit diagnostic payloads and keeps the useful part.
 ///
 /// MetricKit is the only free source of OOM kills, watchdog terminations and
 /// hang diagnostics on macOS — data no in-process crash handler can see,
 /// because the process is already gone by then. Payloads arrive from Apple at
 /// most daily, and only from devices whose users share analytics with Apple.
+/// (macOS delivers only MXDiagnosticPayload; the MXMetricPayload summary feed
+/// is iOS-only.)
 ///
 /// This deliberately does not phone anything home: payloads are logged to the
 /// unified log and archived under Application Support so a user (or a bug
@@ -27,14 +29,6 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber {
     }
 
     // MARK: - MXMetricManagerSubscriber
-
-    func didReceive(_ payloads: [MXMetricPayload]) {
-        for payload in payloads {
-            Self.log.info("received metrics payload covering \(payload.timeStampBegin, privacy: .public) – \(payload.timeStampEnd, privacy: .public)")
-        }
-        // Daily summaries have no actionable per-crash content; the log line is
-        // enough until something specific hurts.
-    }
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
         for payload in payloads {
